@@ -10,6 +10,10 @@ Plataforma web de venta y gestión de entradas para eventos. El proyecto se desa
 - **Infraestructura:** 
 - **Especificaciones:** OpenSpec en Markdown.
 
+## Documentación
+
+- [Consigna del trabajo práctico](docs/assignment/Trabajo-final-de-Tpicos-II---2026.pdf)
+
 ## Agentes soportados
 
 El repositorio incluye workflows para:
