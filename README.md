@@ -91,14 +91,17 @@ release/<version>
 hotfix/<nombre>
 ```
 
-Los commits siguen Conventional Commits:
+Los commits siguen [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/):
 
 ```text
-<tipo>: <descripción>
-<tipo>(<scope>): <descripción>
+<type>[optional scope][optional !]: <description>
+
+[optional body]
+
+[optional footer(s)]
 ```
 
-Tipos habituales: `feat`, `fix`, `docs`, `test`, `refactor` y `chore`.
+`feat` se usa para nuevas funcionalidades y `fix` para correcciones. También se permiten otros tipos como `build`, `chore`, `ci`, `docs`, `perf`, `refactor`, `revert`, `style` y `test`.
 
 Ejemplos:
 
@@ -106,7 +109,10 @@ Ejemplos:
 feat(identity): agregar registro de organizadores
 fix(events): corregir publicación de eventos
 docs: actualizar instrucciones de instalación
+feat(api)!: cambiar el contrato de autenticación
 ```
+
+Los cambios incompatibles deben marcarse con `!` antes de los dos puntos o con el footer `BREAKING CHANGE: descripción`.
 
 ## Autores
 
