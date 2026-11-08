@@ -2,8 +2,8 @@
 
 ## Estructura del monorepo
 
-- [ ] Crear `frontend/` y `backend/`.
-- [ ] Agregar código mínimo independiente en cada carpeta.
+- [ ] Crear las categorías `frontend/` y `backend/` del monorepo.
+- [ ] Crear proyectos placeholder independientes dentro de `backend/` y `frontend/`.
+- [ ] Agregar código mínimo independiente en cada proyecto placeholder.
 - [ ] Agregar pruebas mínimas para validar cada parte.
-- [ ] Verificar el flujo end-to-end.
-- [ ] Documentar la estructura en el README.
+- [ ] Documentar la estructura y el stack en el README.
