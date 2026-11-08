@@ -4,11 +4,20 @@ Plataforma web de venta y gestión de entradas para eventos. El proyecto se desa
 
 ## Tecnologías
 
-- **Backend:**
-- **Base de datos:** 
-- **Frontend:**
-- **Infraestructura:** 
+- **Backend:** FastAPI y SQLAlchemy.
+- **Base de datos:** PostgreSQL.
+- **Frontend:** React, Vite y TypeScript.
+- **Infraestructura:** Docker.
 - **Especificaciones:** OpenSpec en Markdown.
+
+## Estructura
+
+```text
+frontend/    # aplicaciones frontend, una carpeta por proyecto
+└── mock-app/ # aplicación React independiente de ejemplo
+backend/     # microservicios backend, una carpeta por servicio
+└── mock-service/ # servicio FastAPI independiente de ejemplo
+```
 
 ## Documentación
 
