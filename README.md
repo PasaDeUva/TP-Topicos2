@@ -36,10 +36,24 @@ openspec/
     └── archive/           # cambios terminados
 ```
 
-Para instalar el CLI en Windows:
+Para instalar el CLI:
+
+**Windows (PowerShell):**
 
 ```powershell
 irm https://openspec.dev/cli/install.ps1 | iex
+```
+
+**macOS y Linux:**
+
+```bash
+curl -fsSL https://openspec.dev/cli/install.sh | bash
+```
+
+**Alternativamente, con npm (todos los sistemas):**
+
+```bash
+npm install -g @fission-ai/openspec@latest
 ```
 
 Para inicializar o actualizar el proyecto:
