@@ -122,4 +122,4 @@ Los cambios incompatibles deben marcarse con `!` antes de los dos puntos o con e
 
 - **Acosta Santiago** - 📧 [jorge.santiago.acosta@gmail.com](mailto:jorge.santiago.acosta@gmail.com)
 - **Valoni Mercedes** - 📧 [valonimercedes@gmail.com](mailto:valonimercedes@gmail.com)
-- **Rodrigo Ignacio Romero** - 📧 [rodirgoignacioromero96@gmail.com](mailto:rodirgoignacioromero96@gmail.com)
+- **Rodrigo Ignacio Romero** - 📧 [rodrigoignacio932@gmail.com](mailto:rodrigoignacio932@gmail.com)
