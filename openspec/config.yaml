@@ -1,32 +1,27 @@
 schema: spec-driven
 
-# Project context (optional)
-# Add only constraints that should guide OpenSpec artifacts and workflows.
-# Include constraints an agent cannot infer by reading the code.
-# Keep general project documentation and discoverable codebase facts out.
-# Example:
-#   context: |
-#     Designs and tasks must cover Windows, macOS, and Linux
-#     Write all artifacts in Spanish
+context: |
+  Proyecto académico de Tópicos II para una plataforma web de venta y gestión de entradas para eventos.
+  Redactar los artefactos de OpenSpec en español y de forma concisa.
+  Mantener las decisiones arquitectónicas separadas en docs/adr/.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always state what is out of scope
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
-
-# Per-operation guidance (optional)
-# Add advisory guidance for how apply and archive work should be conducted.
-# This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+# Mockup: reglas y guidance pendientes de definición.
+# rules:
+#   proposal:
+#     - Explicar el alcance y dejar explícitamente fuera lo que no se implementará.
+#     - Evitar introducciones, repeticiones y detalles que no sean necesarios para decidir el cambio.
+#   design:
+#     - Justificar las decisiones técnicas cuando el cambio las requiera.
+#     - Señalar las decisiones pendientes en lugar de inventar una solución.
+#     - Documentar solo las decisiones y detalles técnicos necesarios para implementar el cambio.
+#   tasks:
+#     - Dividir la implementación en tareas verificables.
+#     - Mantener cada tarea concreta y breve.
+#
+# operations:
+#   apply:
+#     guidance:
+#       - Implementar únicamente el alcance aprobado en la propuesta, el diseño y las tareas.
+#   archive:
+#     guidance:
+#       - Verificar que la implementación y la documentación coincidan antes de archivar el cambio.
