@@ -21,8 +21,9 @@
 - [x] 4.1 Agregar validación Conventional Commits al hook `commit-msg` y a CI; probar aceptación y rechazo localmente y documentar cómo activar los hooks. La ejecución real del job se valida en 5.1.
 - [x] 4.2 Actualizar el PR template existente con el resultado requerido de CI; verificar que conserva sus secciones y checklist y que el workflow automático usa esa plantilla.
 - [x] 4.3 Documentar la configuración de protección para `development` y `master` con el check definido por el workflow; verificar que coincida con `CI / checks`. Confirmar el nombre publicado por GitHub en 5.1.
-- [ ] 4.4 Extender `pre-commit` para ejecutar Ruff en el `.venv` y ESLint en `node_modules`, y agregar `pre-push` para ejecutar tests con Docker Compose; verificar que linters/test fallidos bloqueen commit/push y que los mensajes identifiquen la causa.
-- [ ] 4.5 Aplicar y verificar en GitHub las reglas para exigir PR y checks exitosos y rechazar pushes directos en ambas ramas protegidas.
+- [x] 4.4 Extender `pre-commit` con Ruff en `.venv` y ESLint en `node_modules`, y agregar `pre-push` con tests Compose; verificar bloqueo ante fallas de lint, fallas simuladas de cada suite y ausencia de Compose. La ejecución Docker real se valida en 5.1.
+- [x] 4.5 Documentar en `docs/ci-cd.md` los hooks, las Actions, el enrutamiento de PRs, las condiciones de aprobación y la excepción `--no-verify`; enlazar la guía desde README.
+- [ ] 4.6 Aplicar y verificar en GitHub las reglas para exigir PR y checks exitosos y rechazar pushes directos en ambas ramas protegidas.
 
 ## 5. Verificar integración
 

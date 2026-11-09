@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "No se encontró Docker. Iniciá Docker Desktop para ejecutar los tests antes del push." >&2
+  exit 1
+fi
+
+if ! docker info >/dev/null 2>&1; then
+  echo "Docker no está disponible. Iniciá Docker Desktop para ejecutar los tests antes del push." >&2
+  exit 1
+fi
+
+compose_file="$repo_root/compose.yaml"
+if [ ! -f "$compose_file" ]; then
+  echo "No se encontró compose.yaml. El push requiere la infraestructura de local-environment." >&2
+  exit 1
+fi
+
+docker compose --project-directory "$repo_root" -f "$compose_file" run --build --rm --no-deps backend-tests
+docker compose --project-directory "$repo_root" -f "$compose_file" run --build --rm --no-deps mock-app npm test

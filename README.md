@@ -23,6 +23,41 @@ backend/     # microservicios backend, una carpeta por servicio
 
 - [Consigna del trabajo práctico](docs/assignment/Trabajo-final-de-Tpicos-II---2026.pdf)
 - [Decisiones arquitectónicas](docs/adr/README.md)
+- [Hooks y CI/CD](docs/ci-cd.md)
+
+## Lint
+
+Las dependencias locales se mantienen aisladas por servicio: Python en el
+`.venv` de cada backend y Node en `node_modules` de cada aplicación. No instales
+dependencias en la raíz del repositorio ni en el Python global.
+
+**Backend, PowerShell:**
+
+```powershell
+cd backend\mock-service
+.\.venv\Scripts\python.exe -m ruff check .
+```
+
+**Backend, macOS o Linux:**
+
+```bash
+cd backend/mock-service
+.venv/bin/python -m ruff check .
+```
+
+**Frontend:**
+
+```bash
+cd frontend/mock-app
+npm run lint
+```
+
+**Docker Compose, desde la raíz del repositorio:**
+
+```bash
+docker compose run --rm backend-tests python -m ruff check mock-service
+docker compose run --rm mock-app npm run lint
+```
 
 ## Agentes soportados
 
@@ -119,6 +154,22 @@ release/<version>
 hotfix/<nombre>
 ```
 
+Las ramas `feature/*` y `bugfix/*` generan PRs a `development`; `release/*` y
+`hotfix/*`, a `master`.
+
+### Protección de ramas en GitHub
+
+Crear un ruleset activo que aplique a `development` y `master`:
+
+- Exigir que los cambios entren mediante un pull request.
+- Exigir el check de estado `CI / checks` antes de integrar. Confirmar el nombre
+  exacto en la primera ejecución del workflow `CI`.
+- No agregar bypasses al ruleset, para que tampoco se permitan pushes directos
+  de administradores.
+
+El workflow no puede configurar estas reglas por sí mismo; alguien con permisos
+de administración debe aplicarlas en **Settings → Rules → Rulesets**.
+
 Los commits siguen [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/):
 
 ```text
@@ -150,7 +201,8 @@ Configurar los hooks compartidos una vez por clon:
 git config core.hooksPath .githooks
 ```
 
-El hook verifica errores de whitespace antes de crear cada commit.
+Para conocer las validaciones de los hooks y el flujo de CI/CD, consultá la
+[guía de hooks y CI/CD](docs/ci-cd.md).
 
 ## Autores
 

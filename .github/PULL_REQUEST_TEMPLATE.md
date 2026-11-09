@@ -14,6 +14,7 @@
 - [ ] Tests ejecutados
 - [ ] Lint y typecheck ejecutados
 - [ ] Docker verificado, si corresponde
+- [ ] CI de GitHub pasó (lint, typecheck, tests y build Docker)
 - [ ] Documentación actualizada, si corresponde
 
 ## Checklist
