@@ -25,7 +25,7 @@ Los servicios Python y las aplicaciones frontend se ejecutan y prueban en Docker
 - **`node_modules` por aplicación, en `frontend/<app>/node_modules`.** Se instala con `npm install` dentro de la carpeta de la aplicación, con Node administrado por `fnm`, y el servidor de TypeScript lo resuelve desde ahí. Se descarta un `package.json` en la raíz porque convertiría el monorepo en un workspace de npm y mezclaría dependencias.
 - **Abrir cada servicio o aplicación como su propia carpeta o proyecto del IDE.** Los IDEs detectan el `.venv` o el `node_modules` de la carpeta abierta y resuelven los imports desde su raíz. Es la opción portable: no depende del editor. Se descarta un workspace multi-root porque `.code-workspace` es un formato exclusivo de VS Code y el equipo no usa necesariamente el mismo editor; se descarta `python.analysis.extraPaths` porque admite un solo intérprete y su ruta cambia según el sistema operativo.
 - **Sin archivos de configuración de editor en el repositorio.** La configuración queda en la guía, no en `.vscode/`.
-- **Mismas `requirements.txt` y `package.json` que Docker, y Python 3.12**, para evitar divergencias entre el IDE y el contenedor. Python 3.12 debe estar instalado en el host para crear el venv; la guía lo indica como prerrequisito y advierte sobre el entorno `base` de conda.
+- **Mismas `requirements.txt` y `package.json` que Docker, y Python 3.12**, para evitar divergencias entre el IDE y el contenedor. Python 3.12 debe estar instalado en el host; la guía selecciona explícitamente esa versión al crear el venv.
 - **Guía por sistema operativo en `docs/local-development.md`**, con variantes para PowerShell y bash/zsh, y la selección manual del intérprete en VS Code.
 
 ## Risks / Trade-offs

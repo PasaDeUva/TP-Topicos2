@@ -22,6 +22,7 @@ backend/     # microservicios backend, una carpeta por servicio
 ## Documentación
 
 - [Consigna del trabajo práctico](docs/assignment/Trabajo-final-de-Tpicos-II---2026.pdf)
+- [Desarrollo local y configuración del IDE](docs/local-development.md)
 - [Decisiones arquitectónicas](docs/adr/README.md)
 
 ## Agentes soportados
