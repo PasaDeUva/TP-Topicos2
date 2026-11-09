@@ -1,0 +1,6 @@
+#!/bin/sh
+
+if ! git diff --cached --check; then
+  echo "El commit contiene errores de whitespace." >&2
+  exit 1
+fi
