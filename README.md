@@ -22,6 +22,7 @@ backend/     # microservicios backend, una carpeta por servicio
 ## Documentación
 
 - [Consigna del trabajo práctico](docs/assignment/Trabajo-final-de-Tpicos-II---2026.pdf)
+- [Decisiones arquitectónicas](docs/adr/README.md)
 
 ## Agentes soportados
 
@@ -140,6 +141,16 @@ feat(api)!: cambiar el contrato de autenticación
 ```
 
 Los cambios incompatibles deben marcarse con `!` antes de los dos puntos o con el footer `BREAKING CHANGE: descripción`.
+
+### Hooks de pre-commit
+
+Configurar los hooks compartidos una vez por clon:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+El hook verifica errores de whitespace antes de crear cada commit.
 
 ## Autores
 
