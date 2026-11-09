@@ -1,12 +1,12 @@
 # Entorno local
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Ejecución reproducible de los servicios
 
-El repositorio DEBE poder iniciar el frontend, el backend y PostgreSQL mediante
-un único comando de Docker Compose, sin instalar dependencias de aplicación en
-el host.
+El repositorio DEBE (MUST) poder iniciar el frontend, el backend y PostgreSQL
+mediante un único comando de Docker Compose, sin instalar dependencias de
+aplicación en el host.
 
 #### Scenario: Levantar el entorno
 
@@ -16,8 +16,8 @@ el host.
 
 ### Requirement: Comunicación frontend-backend
 
-El frontend DEBE poder consultar el endpoint de salud del backend mediante la
-ruta `/api/health`.
+El frontend DEBE (MUST) poder consultar el endpoint de salud del backend
+mediante la ruta `/api/health`.
 
 #### Scenario: Consultar la salud del backend desde el frontend
 
@@ -27,8 +27,8 @@ ruta `/api/health`.
 
 ### Requirement: Disponibilidad de PostgreSQL
 
-PostgreSQL DEBE tener un volumen persistente y un healthcheck que permita
-esperar su disponibilidad antes de iniciar el backend.
+PostgreSQL DEBE (MUST) tener un volumen persistente y un healthcheck que
+permita esperar su disponibilidad antes de iniciar el backend.
 
 #### Scenario: Backend dependiente de la base de datos
 
@@ -37,7 +37,7 @@ esperar su disponibilidad antes de iniciar el backend.
 
 ### Requirement: Ejecución completa de tests backend
 
-El entorno DEBE ofrecer un comando que ejecute los tests de todos los
+El entorno DEBE (MUST) ofrecer un comando que ejecute los tests de todos los
 microservicios backend que contengan una carpeta `tests/`.
 
 #### Scenario: Ejecutar la suite backend
