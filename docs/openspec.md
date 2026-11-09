@@ -87,7 +87,38 @@ Cada requisito debe usar `MUST` o `SHALL` y tener al menos un
 El CLI de OpenSpec es una herramienta Node. No se instala dentro de
 `backend/`, `frontend/` ni en la raíz del proyecto.
 
-Con [fnm](https://github.com/Schniz/fnm) en Windows, activar Node en la sesión:
+### 1. Instalar fnm y Node
+
+[fnm](https://github.com/Schniz/fnm) administra versiones de Node en el perfil
+del usuario.
+
+**Windows (PowerShell):**
+
+```powershell
+winget install Schniz.fnm
+```
+
+**macOS:**
+
+```bash
+brew install fnm
+```
+
+**Linux:**
+
+```bash
+curl -fsSL https://fnm.vercel.app/install | bash
+```
+
+Luego, en cualquier sistema, instalar una versión de Node:
+
+```bash
+fnm install --lts
+```
+
+### 2. Activar fnm en la terminal
+
+**Windows (PowerShell):**
 
 ```powershell
 fnm env --use-on-cd | Out-String | Invoke-Expression
@@ -96,15 +127,53 @@ fnm env --use-on-cd | Out-String | Invoke-Expression
 Para activarlo en cada terminal nueva:
 
 ```powershell
+New-Item -ItemType File -Force $PROFILE
 Add-Content $PROFILE 'fnm env --use-on-cd | Out-String | Invoke-Expression'
 ```
 
-Sin Node en el host, se puede ejecutar mediante Docker desde la raíz:
+**macOS y Linux (bash o zsh):**
+
+```bash
+eval "$(fnm env --use-on-cd)"
+```
+
+Para activarlo en cada terminal nueva, agregar la línea al archivo de perfil
+(`~/.zshrc` en zsh, `~/.bashrc` en bash):
+
+```bash
+echo 'eval "$(fnm env --use-on-cd)"' >> ~/.zshrc
+```
+
+### 3. Instalar OpenSpec
+
+```bash
+npm install -g @fission-ai/openspec@latest
+```
+
+Con fnm, la instalación global queda en el directorio de Node del usuario y no
+en el repositorio.
+
+### Alternativa sin Node: ejecutar con Docker
+
+Desde la raíz del repositorio:
+
+**Windows (PowerShell):**
 
 ```powershell
 docker run --rm -v "${PWD}:/workspace" -w /workspace node:22-alpine `
   sh -c "npm install --silent --global @fission-ai/openspec@latest >/dev/null && openspec validate --all --strict"
 ```
+
+**macOS y Linux:**
+
+```bash
+docker run --rm -v "$(pwd):/workspace" -w /workspace node:22-alpine \
+  sh -c "npm install --silent --global @fission-ai/openspec@latest >/dev/null && openspec validate --all --strict"
+```
+
+En Linux, los archivos que el contenedor escriba pueden quedar a nombre de
+`root`. Agregar `--user "$(id -u):$(id -g)"` al comando evita ese problema en
+comandos que modifican archivos, como `archive`.
 
 Las dependencias de la aplicación (FastAPI, React, PostgreSQL) se ejecutan
 siempre dentro de Docker Compose. Ver el [README](../README.md).

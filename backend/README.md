@@ -9,19 +9,20 @@ tiene su propia subcarpeta, código, dependencias y tests.
 |---|---|---|
 | Mock service | [`mock-service/`](mock-service/) | `mock-service` |
 
-Los nombres de Compose son los que se usan en `docker compose run`.
+Los nombres de Compose son los que se usan en `docker compose run`. Los
+comandos son los mismos en Windows, macOS y Linux.
 
 ## Ejecutar tests de un servicio
 
 Desde la raíz del repositorio:
 
-```powershell
+```bash
 docker compose run --rm mock-service pytest
 ```
 
 Para otro microservicio, se utiliza su nombre en Compose:
 
-```powershell
+```bash
 docker compose run --rm otro-servicio pytest
 ```
 
@@ -30,7 +31,7 @@ docker compose run --rm otro-servicio pytest
 El servicio `backend-tests` busca cada subcarpeta de `backend/` que contenga
 `tests/` y ejecuta sus tests. Para correr la suite completa:
 
-```powershell
+```bash
 docker compose run --rm backend-tests
 ```
 

@@ -25,7 +25,7 @@ de Vite para comunicarse con el backend mediante `/api`.
 
 ### Negativas
 
-- El desarrollo requiere Docker Desktop.
+- El desarrollo requiere Docker Desktop (Windows y macOS) o Docker Engine con Compose (Linux).
 - El primer arranque puede tardar mientras se construyen las imágenes.
 - Se agrega configuración de infraestructura antes de implementar el dominio.
 

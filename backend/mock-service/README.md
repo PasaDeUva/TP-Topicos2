@@ -18,9 +18,9 @@ Respuesta esperada:
 ## Tests
 
 Los tests se ejecutan dentro del contenedor del servicio desde la raíz del
-repositorio:
+repositorio (mismo comando en Windows, macOS y Linux):
 
-```powershell
+```bash
 docker compose run --rm mock-service pytest
 ```
 
@@ -31,7 +31,7 @@ tests de otros servicios.
 
 Para iniciar el entorno completo:
 
-```powershell
+```bash
 docker compose up --build
 ```
 

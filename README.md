@@ -22,9 +22,15 @@ backend/     # microservicios backend, una carpeta por servicio
 ## Entorno local con Docker
 
 El entorno local se ejecuta con Docker Compose y no requiere instalar
-dependencias de frontend o backend en el host:
+dependencias de frontend o backend en el host. Los comandos de Docker son los
+mismos en Windows, macOS y Linux.
 
-```powershell
+Requisitos:
+
+- **Windows y macOS:** [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+- **Linux:** [Docker Engine](https://docs.docker.com/engine/install/) con el plugin Docker Compose.
+
+```bash
 docker compose up --build
 ```
 
@@ -36,7 +42,7 @@ Servicios disponibles:
 
 Para validar los servicios:
 
-```powershell
+```bash
 docker compose run --rm mock-service pytest
 docker compose run --rm backend-tests
 docker compose run --rm mock-app npm run typecheck
@@ -103,11 +109,13 @@ curl -fsSL https://openspec.dev/cli/install.sh | bash
 npm install -g @fission-ai/openspec@latest
 ```
 
-Para inicializar o actualizar el proyecto:
+Para inicializar o actualizar el proyecto (igual en todos los sistemas):
 
-```powershell
+```bash
 openspec init --tools "opencode,antigravity,github-copilot"
 ```
+
+Para más detalle, ver [Cómo trabajar con OpenSpec](docs/openspec.md).
 
 ## Workflow de trabajo
 
