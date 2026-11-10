@@ -1,3 +1,4 @@
+
 name: Create pull request
 
 on:
@@ -16,13 +17,34 @@ jobs:
   create-pull-request:
     name: Create or update pull request
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
       - name: Resolve target branch
         id: target
-        run: echo "base=$(python .github/scripts/pr_target.py \"$GITHUB_REF_NAME\")" >> "$GITHUB_OUTPUT"
+        shell: bash
+        env:
+          SOURCE_BRANCH: ${{ github.ref_name }}
+        run: |
+          case "$SOURCE_BRANCH" in
+            feature/*|bugfix/*)
+              BASE_BRANCH="development"
+              ;;
+            release/*|hotfix/*)
+              BASE_BRANCH="main"
+              ;;
+            *)
+              echo "::error::Unsupported branch: $SOURCE_BRANCH"
+              exit 1
+              ;;
+          esac
+
+          echo "Source branch: $SOURCE_BRANCH"
+          echo "Target branch: $BASE_BRANCH"
+
+          echo "base=$BASE_BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Create or update pull request
         env:
@@ -30,18 +52,47 @@ jobs:
           GH_REPO: ${{ github.repository }}
           SOURCE_BRANCH: ${{ github.ref_name }}
           BASE_BRANCH: ${{ steps.target.outputs.base }}
+        shell: bash
         run: |
-          existing_pr="$(gh pr list --repo "$GH_REPO" --head "$SOURCE_BRANCH" --state open --json number --jq '.[0].number // empty')"
+          set -euo pipefail
+
+          if [ -z "$BASE_BRANCH" ]; then
+            echo "::error::BASE_BRANCH cannot be empty"
+            exit 1
+          fi
+
+          existing_pr="$(gh pr list \
+            --repo "$GH_REPO" \
+            --head "$SOURCE_BRANCH" \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')"
 
           if [ -n "$existing_pr" ]; then
-            existing_base="$(gh pr view "$existing_pr" --repo "$GH_REPO" --json baseRefName --jq '.baseRefName')"
+            echo "Existing PR found: #$existing_pr"
+
+            existing_base="$(gh pr view "$existing_pr" \
+              --repo "$GH_REPO" \
+              --json baseRefName \
+              --jq '.baseRefName')"
+
             if [ "$existing_base" != "$BASE_BRANCH" ]; then
-              gh pr edit "$existing_pr" --repo "$GH_REPO" --base "$BASE_BRANCH"
+              echo "Updating PR base to $BASE_BRANCH"
+
+              gh pr edit "$existing_pr" \
+                --repo "$GH_REPO" \
+                --base "$BASE_BRANCH"
+            else
+              echo "PR already targets $BASE_BRANCH"
             fi
+
             exit 0
           fi
 
+          echo "Creating PR: $SOURCE_BRANCH -> $BASE_BRANCH"
+
           title="$(git log -1 --pretty=%s)"
+
           gh pr create \
             --repo "$GH_REPO" \
             --head "$SOURCE_BRANCH" \
