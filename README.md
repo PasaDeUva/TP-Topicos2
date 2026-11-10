@@ -19,9 +19,52 @@ backend/     # microservicios backend, una carpeta por servicio
 └── mock-service/ # servicio FastAPI independiente de ejemplo
 ```
 
+## Entorno local con Docker
+
+El entorno local se ejecuta con Docker Compose y no requiere instalar
+dependencias de frontend o backend en el host. Los comandos de Docker son los
+mismos en Windows, macOS y Linux.
+
+Requisitos:
+
+- **Windows y macOS:** [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+- **Linux:** [Docker Engine](https://docs.docker.com/engine/install/) con el plugin Docker Compose.
+
+```bash
+docker compose up --build
+```
+
+Servicios disponibles:
+
+- Frontend: <http://localhost:5173>
+- Backend mock service: <http://localhost:8000/health>
+- PostgreSQL: `localhost:5432`
+
+Para validar los servicios:
+
+```bash
+docker compose run --rm mock-service pytest
+docker compose run --rm backend-tests
+docker compose run --rm mock-app npm run typecheck
+docker compose run --rm mock-app npm run test
+docker compose run --rm mock-app npm run build
+```
+
+El frontend consulta `/api/health`; Vite redirige esa ruta al servicio
+`mock-service` dentro de la red de Compose.
+
+Cada comando `docker compose run --rm <servicio> <comando>` ejecuta el comando
+únicamente dentro del servicio indicado. Para ejecutar los tests de otro
+microservicio, se reemplaza `<servicio>` por su nombre en `compose.yaml`.
+`backend-tests` es el runner de toda la carpeta `backend/` y ejecuta los tests
+de todos los microservicios que tengan una carpeta `tests/`.
+Consultar la documentación específica en [`backend/README.md`](backend/README.md)
+y [`backend/mock-service/README.md`](backend/mock-service/README.md).
+
 ## Documentación
 
 - [Consigna del trabajo práctico](docs/assignment/Trabajo-final-de-Tpicos-II---2026.pdf)
+- [Cómo trabajar con OpenSpec](docs/openspec.md)
 - [Decisiones arquitectónicas](docs/adr/README.md)
 
 ## Agentes soportados
@@ -66,11 +109,13 @@ curl -fsSL https://openspec.dev/cli/install.sh | bash
 npm install -g @fission-ai/openspec@latest
 ```
 
-Para inicializar o actualizar el proyecto:
+Para inicializar o actualizar el proyecto (igual en todos los sistemas):
 
-```powershell
+```bash
 openspec init --tools "opencode,antigravity,github-copilot"
 ```
+
+Para más detalle, ver [Cómo trabajar con OpenSpec](docs/openspec.md).
 
 ## Workflow de trabajo
 
