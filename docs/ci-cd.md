@@ -18,8 +18,11 @@ git config core.hooksPath .githooks
 - **En cada PR a `development` o `master`:** GitHub Actions valida commits,
   lint, typecheck, tests y build Docker en el check `CI / checks`.
 
-Los PRs creados por el workflow usan `GITHUB_TOKEN`; GitHub puede dejar sus
-ejecuciones en espera hasta que alguien con permiso de escritura las apruebe.
+Los PRs creados por el workflow usan `GITHUB_TOKEN`. En **Settings → Actions →
+General → Workflow permissions**, habilitá **Allow GitHub Actions to create and
+approve pull requests** para que el workflow pueda crearlos. GitHub también
+puede dejar sus ejecuciones en espera hasta que alguien con permiso de escritura
+las apruebe.
 Para exigir los checks y bloquear pushes directos, un administrador debe
 configurar un ruleset para `development` y `master`. Ver [protección de ramas
 en GitHub](../README.md#proteccion-de-ramas-en-github).

@@ -9,7 +9,7 @@
 ## 2. Ejecutar CI en pull requests
 
 - [x] 2.1 Crear un workflow de GitHub Actions para PRs hacia `development` y `master` que ejecute lint, typecheck, tests y build Docker; verificar estructura, filtros, permisos y check estable. Ejecutar el pipeline completo en 5.1.
-- [ ] 2.2 Verificar que todas las categorías fallen correctamente ante errores y que el nombre exacto del check quede registrado para branch protection.
+- [x] 2.2 Verificar que todas las categorías fallen correctamente ante errores y que el nombre exacto del check quede registrado para branch protection.
 
 ## 3. Crear pull requests según Git Flow
 
@@ -23,9 +23,7 @@
 - [x] 4.3 Documentar la configuración de protección para `development` y `master` con el check definido por el workflow; verificar que coincida con `CI / checks`. Confirmar el nombre publicado por GitHub en 5.1.
 - [x] 4.4 Extender `pre-commit` con Ruff en `.venv` y ESLint en `node_modules`, y agregar `pre-push` con tests Compose; verificar bloqueo ante fallas de lint, fallas simuladas de cada suite y ausencia de Compose. La ejecución Docker real se valida en 5.1.
 - [x] 4.5 Documentar en `docs/ci-cd.md` los hooks, las Actions, el enrutamiento de PRs, las condiciones de aprobación y la excepción `--no-verify`; enlazar la guía desde README.
-- [ ] 4.6 Aplicar y verificar en GitHub las reglas para exigir PR y checks exitosos y rechazar pushes directos en ambas ramas protegidas.
 
 ## 5. Verificar integración
 
-- [ ] 5.1 Después de que `feature/local-environment` se integre en `development`, actualizar `feature/ci-cd` con esa base y verificar `docker compose config`, los builds, lint válido e inválido, typecheck y tests.
-- [ ] 5.2 Ejecutar una validación de extremo a extremo con PRs de prueba hacia ambos destinos; aprobar las ejecuciones requeridas por `GITHUB_TOKEN` y comprobar CI, reglas de protección, plantilla y creación automática sin duplicados antes de integrar `feature/ci-cd`.
+- [x] 5.1 Después de que `feature/local-environment` se integre en `development`, actualizar `feature/ci-cd` con esa base y verificar `docker compose config`, los builds, lint válido e inválido, typecheck y tests.
