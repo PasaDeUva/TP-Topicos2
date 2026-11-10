@@ -1,6 +1,22 @@
 #!/bin/sh
+set -eu
 
 if ! git diff --cached --check; then
   echo "El commit contiene errores de whitespace." >&2
   exit 1
 fi
+
+repo_root="$(git rev-parse --show-toplevel)"
+backend_python="$repo_root/backend/mock-service/.venv/Scripts/python.exe"
+
+if [ ! -x "$backend_python" ]; then
+  backend_python="$repo_root/backend/mock-service/.venv/bin/python"
+fi
+
+if [ ! -x "$backend_python" ]; then
+  echo "No se encontró el Python del .venv de backend. Creá el entorno e instalá requirements.txt." >&2
+  exit 1
+fi
+
+"$backend_python" -m ruff check "$repo_root/backend/mock-service"
+npm --prefix "$repo_root/frontend/mock-app" run lint

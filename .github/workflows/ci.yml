@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - development
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Test pull request target mapping
+        run: python -m unittest discover -s .github/scripts -p "test_*.py"
+
+      - name: Validate commit messages
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git log --no-merges --format=%s "${BASE_SHA}..${HEAD_SHA}" > "$RUNNER_TEMP/commit-subjects"
+          while IFS= read -r subject; do
+            python .github/scripts/validate_commit_message.py --subject "$subject"
+          done < "$RUNNER_TEMP/commit-subjects"
+
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+
+      - name: Build application images
+        run: docker compose build
+
+      - name: Lint backend
+        run: docker compose run --rm --no-deps backend-tests python -m ruff check mock-service
+
+      - name: Test backend
+        run: docker compose run --rm --no-deps backend-tests
+
+      - name: Lint frontend
+        run: docker compose run --rm --no-deps mock-app npm run lint
+
+      - name: Typecheck frontend
+        run: docker compose run --rm --no-deps mock-app npm run typecheck
+
+      - name: Test frontend
+        run: docker compose run --rm --no-deps mock-app npm test

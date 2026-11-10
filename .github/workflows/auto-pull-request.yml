@@ -1,0 +1,50 @@
+name: Create pull request
+
+on:
+  push:
+    branches:
+      - "feature/**"
+      - "bugfix/**"
+      - "release/**"
+      - "hotfix/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  create-pull-request:
+    name: Create or update pull request
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve target branch
+        id: target
+        run: echo "base=$(python .github/scripts/pr_target.py \"$GITHUB_REF_NAME\")" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_BRANCH: ${{ github.ref_name }}
+          BASE_BRANCH: ${{ steps.target.outputs.base }}
+        run: |
+          existing_pr="$(gh pr list --repo "$GH_REPO" --head "$SOURCE_BRANCH" --state open --json number --jq '.[0].number // empty')"
+
+          if [ -n "$existing_pr" ]; then
+            existing_base="$(gh pr view "$existing_pr" --repo "$GH_REPO" --json baseRefName --jq '.baseRefName')"
+            if [ "$existing_base" != "$BASE_BRANCH" ]; then
+              gh pr edit "$existing_pr" --repo "$GH_REPO" --base "$BASE_BRANCH"
+            fi
+            exit 0
+          fi
+
+          title="$(git log -1 --pretty=%s)"
+          gh pr create \
+            --repo "$GH_REPO" \
+            --head "$SOURCE_BRANCH" \
+            --base "$BASE_BRANCH" \
+            --title "$title" \
+            --body-file .github/PULL_REQUEST_TEMPLATE.md

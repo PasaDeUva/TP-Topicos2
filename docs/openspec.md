@@ -23,7 +23,7 @@ openspec/
 
 | Tipo | Dónde se escribe | Para qué |
 |---|---|---|
-| Comandos del agente (`/opsx-*`) | Chat de Copilot, OpenCode o Antigravity | Crear, implementar y archivar cambios. |
+| Comandos del agente (`/opsx-*`) | Chat de Copilot, OpenCode o Antigravity | Crear, implementar, sincronizar specs y archivar cambios. |
 | Comandos del CLI (`openspec ...`) | Terminal | Consultar, validar y archivar. |
 
 ## Flujo de trabajo
@@ -35,9 +35,11 @@ openspec/
 4. **Implementar** las tareas: `/opsx-apply <change>`. Cada tarea completada se
    marca como `- [x]` en `tasks.md`.
 5. **Validar**: `openspec validate <change> --strict`.
-6. **Archivar**: `/opsx-archive <change>`. Mueve el cambio a `archive/` y, si
+6. **Sincronizar specs** (opcional, sin archivar): `/opsx-sync <change>`.
+   Actualiza `openspec/specs/` desde los deltas y mantiene activo el cambio.
+7. **Archivar**: `/opsx-archive <change>`. Mueve el cambio a `archive/` y, si
    hay deltas, sincroniza `openspec/specs/`.
-7. **Abrir el Pull Request** hacia `development`.
+8. **Abrir el Pull Request** hacia `development`.
 
 OpenSpec no crea Pull Requests ni ramas: eso se hace con Git.
 
