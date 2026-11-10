@@ -2,4 +2,18 @@
 set -eu
 
 repo_root="$(git rev-parse --show-toplevel)"
-exec python "$repo_root/.github/scripts/validate_commit_message.py" "$1"
+
+python_cmd=""
+for candidate in python3 python; do
+  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" --version >/dev/null 2>&1; then
+    python_cmd="$candidate"
+    break
+  fi
+done
+
+if [ -z "$python_cmd" ]; then
+  echo "No se encontró un intérprete de Python funcional (python3 o python) para validar el mensaje de commit." >&2
+  exit 1
+fi
+
+exec "$python_cmd" "$repo_root/.github/scripts/validate_commit_message.py" "$1"
