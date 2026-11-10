@@ -1,0 +1,12 @@
+FROM python:3.12-slim
+
+WORKDIR /workspace
+
+COPY . .
+
+RUN set -eux; \
+    for requirements in */requirements.txt; do \
+      pip install --no-cache-dir -r "$requirements"; \
+    done
+
+CMD ["sh", "-c", "set -eu; found=0; for service in */; do if [ -d \"$service/tests\" ]; then found=1; echo \"Running tests for $service\"; (cd \"$service\" && pytest -q); fi; done; test \"$found\" -eq 1"]
