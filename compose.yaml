@@ -22,6 +22,9 @@ services:
       DATABASE_URL: postgresql+psycopg://topicos:topicos@postgres:5432/topicos
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend/mock-service:/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     depends_on:
       postgres:
         condition: service_healthy
