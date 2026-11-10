@@ -65,6 +65,7 @@ y [`backend/mock-service/README.md`](backend/mock-service/README.md).
 
 - [Consigna del trabajo práctico](docs/assignment/Trabajo-final-de-Tpicos-II---2026.pdf)
 - [Cómo trabajar con OpenSpec](docs/openspec.md)
+- [Desarrollo local y configuración del IDE](docs/local-development.md)
 - [Decisiones arquitectónicas](docs/adr/README.md)
 
 ## Agentes soportados
