@@ -1,45 +1,38 @@
-# Tasks: Implementación de Gestión de Eventos y Catálogo
+# Tasks: Implementación Mínima de Gestión de Eventos
 
-## 1. Scaffolding, Base de Datos y Modelo de Datos (PR-1 Slice 1)
+## 1. Scaffolding, Base de Datos y Modelos
 
-- [ ] 1.1 Crear estructura de directorios en `backend/events-service/`, archivo `Dockerfile` y `pyproject.toml` con dependencias (FastAPI, SQLAlchemy 2, Alembic, Pydantic v2, Psycopg3) y verificar build de Docker.
-- [ ] 1.2 Configurar `compose.yaml` agregando los servicios `events-db` (PostgreSQL 16) y `events-service` con sus volúmenes y variables de entorno correspondientes.
-- [ ] 1.3 Configurar Alembic y generar la migración inicial completa `0001_initial_schema.py` creando las tablas `eventos`, `modalidades`, `asientos`, `zonas` y `reservas`, verificando su ejecución exitosa.
-- [ ] 1.4 Implementar los modelos ORM de SQLAlchemy en `app/models/` (`evento.py`, `modalidad.py`, `asiento.py`, `zona.py`, `reserva.py`) respetando constraints y relaciones.
+- [ ] 1.1 Crear estructura de directorios en `backend/events-service/`, archivo `Dockerfile` y `pyproject.toml` con FastAPI, SQLAlchemy 2, Alembic, Pydantic v2 y Psycopg3.
+- [ ] 1.2 Configurar `compose.yaml` agregando los servicios `events-db` (PostgreSQL 16) y `events-service` con variables de entorno y volúmenes.
+- [ ] 1.3 Configurar Alembic y generar la migración inicial `0001_initial_schema.py` creando las 3 tablas (`eventos`, `modalidades_stock`, `reservas`) con IDs UUID autogenerados.
+- [ ] 1.4 Implementar modelos ORM de SQLAlchemy en `app/models.py` respetando relaciones y restricción UNIQUE `(evento_id, asiento_codigo)`.
 
-## 2. Middleware de Bitácora y Operaciones del Organizador (PR-1 Slice 2)
+## 2. Middleware, Schemas y Handlers de Eventos
 
-- [ ] 2.1 Implementar el middleware HTTP en `app/middleware/logging.py` que capture `duration_ms`, propague `X-Correlation-Id` y emita registros JSON estructurados a stdout.
-- [ ] 2.2 Configurar inyección de dependencias para extraer claims de headers `X-User-Id` y `X-User-Role` en `app/dependencies.py`.
-- [ ] 2.3 Implementar esquemas DTO de Pydantic v2 para creación y consulta básica de eventos en `app/schemas/evento.py` y `app/schemas/modalidad.py`.
-- [ ] 2.4 Implementar routers del organizador `POST /eventos` (borrador), `GET /eventos`, `GET /eventos/{id}` y `PUT /eventos/{id}` en `app/routers/eventos.py`.
+- [ ] 2.1 Implementar middleware HTTP de bitácora en `app/main.py` registrando logs JSON a stdout con `duration_ms` y propagación de `X-Correlation-Id`.
+- [ ] 2.2 Configurar exception handler para validación de datos retornando `400 Bad Request` con `{"detail": "invalid body"}` ante campos faltantes.
+- [ ] 2.3 Implementar schemas Pydantic v2 en `app/schemas.py` para upsert y respuestas de eventos con identificadores UUID.
+- [ ] 2.4 Implementar handlers en `app/routers.py`:
+  - `GET /eventos` y `GET /eventos/{id}` (retornando entidades tanto activas como inactivas).
+  - `POST /eventos` unificado (creación 201 sin id, edición 200 con id, y baja lógica con `activo: false`).
 
-## 3. Testing Automatizado y Validación de PR-1 (PR-1 Slice 3)
+## 3. Contratos de Inventario y Concurrencia para Compras
 
-- [ ] 3.1 Implementar fixtures de base de datos de test y cliente HTTP en `tests/conftest.py`.
-- [ ] 3.2 Desarrollar tests unitarios para modelos y schemas en `tests/test_models.py`.
-- [ ] 3.3 Desarrollar tests para el middleware HTTP de bitácora en `tests/test_middleware.py` validando formato JSON y cabeceras de correlación.
-- [ ] 3.4 Desarrollar tests de integración en `tests/test_eventos_crud.py` validando creación 201, edición libre en borrador, validaciones 422 y control de acceso (401/403).
-- [ ] 3.5 Ejecutar la suite de tests en Docker (`pytest`) y verificar que el código de producción respete el umbral de ~600 líneas antes de cerrar el PR-1.
+- [ ] 3.1 Implementar lógica de reservas con TTL de 10 minutos en `app/services.py`.
+- [ ] 3.2 Implementar control de concurrencia: bloqueo pesimista en asientos (`SELECT FOR UPDATE`) y update atómico condicional en zonas (`UPDATE ... WHERE cupo >= n RETURNING id`).
+- [ ] 3.3 Implementar endpoints de contrato para Compras:
+  - `POST /eventos/{id}/reservar` (retorna 200 con TTL o 409 Conflict si no hay stock o `activo: false`).
+  - `POST /eventos/{id}/reservas/{reserva_id}/confirmar` (asienta reserva confirmada).
+  - `POST /eventos/{id}/reservas/{reserva_id}/liberar` (reintegra stock).
 
-## 4. Ciclo de Vida y Catálogo Público (PR-2)
+## 4. Testing Automatizado y Verificación
 
-- [ ] 4.1 Implementar validaciones de publicación (completitud de venue, fechas, modalidades) y router `POST /eventos/{id}/publicar`.
-- [ ] 4.2 Implementar routers de transición `POST /eventos/{id}/pausar` y `POST /eventos/{id}/despublicar` protegiendo compras existentes.
-- [ ] 4.3 Implementar router público `GET /catalogo/eventos` con soporte de filtros (`fecha_desde`, `fecha_hasta`, `tipo_evento`), paginación y exclusión automática de eventos finalizados.
-- [ ] 4.4 Implementar router público `GET /catalogo/eventos/{id}` calculando dinámicamente `venta_habilitada` y disponibilidad en tiempo real.
-- [ ] 4.5 Desarrollar tests de integración en `tests/test_ciclo_de_vida.py` y `tests/test_catalogo.py` cubriendo transiciones de estado, ocultamiento y filtros de catálogo (100% pytest).
-- [ ] 4.6 Ejecutar validación de tests y verificar métrica de ~600 líneas de código de producción para PR-2.
-
-## 5. Contratos de Inventario y Concurrencia (PR-3)
-
-- [ ] 5.1 Implementar servicio de inventario en `app/services/inventario.py` gestionando reservas con TTL de 10 minutos para modalidades numeradas y generales.
-- [ ] 5.2 Implementar concurrencia pesimista (`SELECT FOR UPDATE`) para asientos numerados y updates condicionales atómicos para zonas generales (`UPDATE ... WHERE cupo_disponible >= n RETURNING id`).
-- [ ] 5.3 Implementar routers de contrato `POST /eventos/{id}/reservar`, `POST /eventos/{id}/confirmar` y `POST /eventos/{id}/liberar`.
-- [ ] 5.4 Desarrollar tests de concurrencia y sobreventa en `tests/test_concurrencia_inventario.py` simulando peticiones simultáneas sobre el mismo asiento o cupo y validando expiración TTL.
-- [ ] 5.5 Ejecutar la suite integral de pruebas con pytest en Docker Compose y validar funcionamiento de punta a punta con cURL antes de cerrar el PR-3.
+- [ ] 4.1 Configurar fixtures de base de datos de test en `tests/conftest.py`.
+- [ ] 4.2 Implementar tests en `tests/test_eventos.py` validando creación 201, validaciones 400 (`invalid body`), edición y baja lógica, y consultas GET retornando entidades activas e inactivas.
+- [ ] 4.3 Implementar tests en `tests/test_reservas.py` validando reservas atómicas, prevención de sobreventa bajo concurrencia simulada y confirmación/liberación.
+- [ ] 4.4 Ejecutar suite completa con pytest en Docker Compose verificando que el código de producción se mantenga en ~450 líneas.
 
 ## Workflow follow-up
 
-- Ejecutar `openspec validate` para confirmar integridad de todos los artefactos.
-- Crear Pull Request en GitHub con la propuesta y especificaciones completas para revisión del equipo.
+- Ejecutar `openspec validate` para confirmar la integridad del change.
+- Actualizar el PR en GitHub con la propuesta reducida y consensuada con el equipo.

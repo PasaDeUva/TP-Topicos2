@@ -1,34 +1,29 @@
-# Design: Gestión de Eventos y Catálogo (`gestion-de-eventos`)
+# Design: Gestión de Eventos y Catálogo Mínimo (`gestion-de-eventos`)
 
 ## Context
 
-El proyecto actual cuenta con servicios mock iniciales (`mock-service` y `mock-app`) y gobernanza de CI/CD. Este diseño establece la arquitectura técnica, modelo relacional, contratos OpenAPI 3.1 y políticas de concurrencia para el microservicio `backend/events-service/`. Ver [proposal.md](./proposal.md) para la justificación de alcance y el directorio `specs/` para los requerimientos funcionales descompuestos en 3 capacidades normativas. Las decisiones estructurales se registran en [ADR-0003](../../../docs/adr/0003-servicio-eventos-e-inventario.md).
+Tras la reunión de equipo del 2026-11-11, se redujo el diseño para enfocarse exclusivamente en lo indispensable para cumplir la Etapa I: permitir la venta de tickets garantizando unicidad y consistencia en la concurrencia, sin sobre-ingeniería en ciclos de vida. Ver [proposal.md](./proposal.md) y [specs/gestion-de-eventos/spec.md](./specs/gestion-de-eventos/spec.md).
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Implementar el microservicio `events-service` de forma completamente autónoma con su base PostgreSQL dedicada (`events_db`).
-- Descomponer la entrega en 3 vertical slices orientados a Pull Requests de ~600 líneas de código de producción (sin tests):
-  1. `publicacion-eventos` (PR-1)
-  2. `ciclo-de-vida-y-catalogo` (PR-2)
-  3. `inventario-y-contratos` (PR-3)
-- Garantizar reserva atómica concurrente sin sobreventa mediante locking pesimista en asientos y updates atómicos en zonas generales.
-- Exponer contratos REST OpenAPI 3.1 claros y desacoplados para Compras con TTL de 10 minutos.
-- Integrar middleware HTTP que emita logs estructurados en JSON a stdout con medición de `duration_ms` y propagación de `X-Correlation-Id`.
-- Establecer una suite de testing 100% pytest para ejecución en Docker Compose (`backend-tests` y local).
+- Microservicio autónomo `events-service` con base de datos PostgreSQL 16 dedicada (`events_db`).
+- Superficie mínima de API: 4 endpoints directos (`GET /eventos`, `GET /eventos/{id}`, `POST /eventos` para upsert/baja lógica, y operaciones de reserva para Compras).
+- Manejo de UUIDs autogenerados para todas las entidades.
+- Validación estricta en handlers: retornar `400 Bad Request` con `{"detail": "invalid body"}` ante cualquier campo obligatorio faltante.
+- Garantizar no-sobreventa bajo concurrencia mediante `SELECT FOR UPDATE` (asientos numerados) y updates atómicos condicionales (zonas generales).
+- Middleware de observabilidad HTTP con logs estructurados JSON (`duration_ms`, `X-Correlation-Id`).
+- Implementación completa en un único Pull Request de ~450 líneas de código de producción.
 
 **Non-Goals:**
-- Implementar las vistas en React (frontend diferido a una spec/PR posterior).
-- Implementar validación criptográfica de JWT (en Etapa I se confía en headers `X-User-Id` y `X-User-Role`).
-- Implementar bus asíncrono o broker de mensajería (fuera del alcance de la Etapa I).
+- Máquina de estados compleja (Borrador/Pausado/Despublicado): reemplazada por baja lógica `activo: false`.
+- Validación de inicio programado de venta (`fecha_inicio_venta`).
+- Ocultamiento automático complejo de fechas; las fechas y el flag `activo` viajan en el payload de consulta.
+- Interfaz gráfica React (diferida a spec/PR posterior).
 
 ## Decisions
 
-### 1. Database per Service y Stack Tecnológico
-- **Decisión:** Base de datos relacional PostgreSQL 16 dedicada (`events_db`), con FastAPI, SQLAlchemy 2 (async), Alembic y Pydantic v2.
-- **Alternativas consideradas:** Compartir base con Compras o Auth (descartado por violar límites de Bounded Context de DDD y reglas de cátedra).
-
-### 2. Estructura del Servicio (`backend/events-service/`)
+### 1. Estructura del Servicio (`backend/events-service/`)
 ```
 backend/events-service/
 ├── Dockerfile
@@ -39,157 +34,82 @@ backend/events-service/
 │   └── versions/
 │       └── 0001_initial_schema.py
 ├── app/
-│   ├── main.py
-│   ├── config.py
-│   ├── database.py
-│   ├── dependencies.py
-│   ├── middleware/
-│   │   └── logging.py
-│   ├── models/
-│   │   ├── evento.py
-│   │   ├── modalidad.py
-│   │   ├── asiento.py
-│   │   ├── zona.py
-│   │   └── reserva.py
-│   ├── schemas/
-│   │   ├── evento.py
-│   │   ├── modalidad.py
-│   │   └── reserva.py
-│   ├── services/
-│   │   ├── eventos.py
-│   │   └── inventario.py
-│   └── routers/
-│       ├── catalogo.py
-│       ├── eventos.py
-│       └── contratos.py
+│   ├── main.py             # FastAPI app + middleware bitácora HTTP + exception handlers (400)
+│   ├── config.py           # Settings y variables de entorno
+│   ├── database.py         # Conexión SQLAlchemy async con PostgreSQL
+│   ├── models.py           # Modelos ORM (eventos, modalidades_stock, reservas)
+│   ├── schemas.py          # DTOs Pydantic v2
+│   ├── services.py         # Lógica de dominio y concurrencia de reservas
+│   └── routers.py          # Handlers de /eventos y /eventos/{id}/reservar...
 └── tests/
     ├── conftest.py
-    ├── test_models.py
-    ├── test_middleware.py
-    ├── test_eventos_crud.py
-    ├── test_ciclo_de_vida.py
-    ├── test_catalogo.py
-    └── test_concurrencia_inventario.py
+    ├── test_eventos.py     # Tests de creación, edición, baja lógica y consultas
+    └── test_reservas.py    # Tests de concurrencia, TTL y prevención de sobreventa
 ```
 
-### 3. Modelo de Datos Relacional (PostgreSQL)
+### 2. Modelo Relacional Simplificado (3 Tablas)
 
-```
-eventos
-  id UUID PK
-  organizador_id UUID NOT NULL
-  nombre VARCHAR(255) NOT NULL
-  descripcion TEXT NOT NULL
-  fecha_inicio TIMESTAMPTZ NOT NULL
-  fecha_fin TIMESTAMPTZ NOT NULL
-  venue TEXT NOT NULL
-  estado VARCHAR(20) NOT NULL DEFAULT 'BORRADOR'
-    CHECK (estado IN ('BORRADOR','PUBLICADO','PAUSADO','DESPUBLICADO'))
-  fecha_inicio_venta TIMESTAMPTZ NULL
-  tipo_evento VARCHAR(50) NULL
-  participantes TEXT[] NULL
-  creado_en TIMESTAMPTZ NOT NULL DEFAULT now()
-  actualizado_en TIMESTAMPTZ NOT NULL DEFAULT now()
+```sql
+CREATE TABLE eventos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    nombre VARCHAR(255) NOT NULL,
+    descripcion TEXT,
+    venue VARCHAR(255) NOT NULL,
+    fecha TIMESTAMPTZ NOT NULL,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
-modalidades (1:N con eventos)
-  id UUID PK
-  evento_id UUID NOT NULL FK -> eventos(id) ON DELETE CASCADE
-  nombre VARCHAR(100) NOT NULL
-  tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('asiento_numerado', 'zona_general'))
-  precio NUMERIC(10,2) NOT NULL CHECK (precio > 0)
+CREATE TABLE modalidades_stock (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    evento_id UUID NOT NULL REFERENCES eventos(id) ON DELETE CASCADE,
+    tipo VARCHAR(20) NOT NULL,           -- 'numerado' | 'general'
+    nombre VARCHAR(100) NOT NULL,        -- 'Platea VIP', 'Campo'
+    precio NUMERIC(10,2) NOT NULL,
+    asiento_codigo VARCHAR(20),          -- 'A-1' (NULL si general)
+    cupo_total INT,                      -- NULL si numerado
+    cupo_disponible INT,                 -- NULL si numerado
+    estado_asiento VARCHAR(20),          -- 'DISPONIBLE','RESERVADO','VENDIDO' (NULL si general)
+    UNIQUE (evento_id, asiento_codigo)
+);
 
-asientos (solo para tipo 'asiento_numerado')
-  id UUID PK
-  modalidad_id UUID NOT NULL FK -> modalidades(id) ON DELETE CASCADE
-  evento_id UUID NOT NULL FK -> eventos(id) ON DELETE CASCADE
-  asiento_codigo VARCHAR(20) NOT NULL
-  estado VARCHAR(20) NOT NULL DEFAULT 'DISPONIBLE'
-    CHECK (estado IN ('DISPONIBLE', 'RESERVADO', 'VENDIDO'))
-  UNIQUE (evento_id, asiento_codigo)
-
-zonas (solo para tipo 'zona_general')
-  id UUID PK
-  modalidad_id UUID NOT NULL FK -> modalidades(id) ON DELETE CASCADE
-  evento_id UUID NOT NULL FK -> eventos(id) ON DELETE CASCADE
-  cupo_total INTEGER NOT NULL CHECK (cupo_total > 0)
-  cupo_disponible INTEGER NOT NULL CHECK (cupo_disponible >= 0)
-
-reservas
-  id UUID PK
-  evento_id UUID NOT NULL FK -> eventos(id)
-  compra_id UUID NOT NULL
-  tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('asiento_numerado', 'zona_general'))
-  asiento_id UUID NULL FK -> asientos(id)
-  zona_id UUID NULL FK -> zonas(id)
-  cantidad INTEGER NOT NULL DEFAULT 1 CHECK (cantidad > 0)
-  estado VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE'
-    CHECK (estado IN ('PENDIENTE', 'CONFIRMADA', 'LIBERADA'))
-  expira_en TIMESTAMPTZ NOT NULL
-  creado_en TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE reservas (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    evento_id UUID NOT NULL REFERENCES eventos(id),
+    modalidad_id UUID NOT NULL REFERENCES modalidades_stock(id),
+    compra_id UUID NOT NULL,
+    asiento_codigo VARCHAR(20),
+    cantidad INT NOT NULL DEFAULT 1,
+    estado VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE', -- 'PENDIENTE','CONFIRMADA','LIBERADA'
+    expira_en TIMESTAMPTZ NOT NULL,
+    creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 ```
 
-### 4. Superficie de API REST y Contratos OpenAPI 3.1
+### 3. Contratos REST y Manejo de Errores
 
-#### Catálogo Público (sin autenticación)
-- `GET /catalogo/eventos`: Paginación y filtros (`fecha_desde`, `fecha_hasta`, `tipo_evento`). Oculta automáticamente eventos donde `fecha_fin < CURRENT_DATE`.
-- `GET /catalogo/eventos/{id}`: Detalle del evento con cálculo dinámico `venta_habilitada = (fecha_inicio_venta IS NULL OR fecha_inicio_venta <= NOW())` y cupo disponible por modalidad en tiempo real.
+- **Validación 400 Bad Request:** FastAPI interceptará `RequestValidationError` para devolver status code `400` y cuerpo `{"detail": "invalid body"}` si falta cualquier campo obligatorio (`nombre`, `venue`, `fecha`, o modalidades válidas con precio > 0).
+- **GET /eventos:** Devuelve la lista completa de eventos incluyendo el valor booleano de `activo` (permite visualizar eventos activos e inactivos).
+- **GET /eventos/{id}:** Devuelve el detalle del evento y modalidades con su atributo `activo`. Retorna 404 si el UUID no existe.
+- **POST /eventos:**
+  - Sin `id`: Crea evento nuevo y modalidades con UUIDs autogenerados. Retorna 201 Created.
+  - Con `id`: Actualiza campos provistos. Retorna 200 OK.
+  - Con `id` y `"activo": false`: Aplica baja lógica al evento. Retorna 200 OK.
+- **POST /eventos/{id}/reservar:** Bloquea inventario con TTL de 10 min. Retorna 200 OK con `reserva_id` o 409 Conflict si no hay stock o el evento está inactivo (`activo: false`).
+- **POST /eventos/{id}/reservas/{reserva_id}/confirmar:** Confirma reserva post-pago (`estado: CONFIRMADA`).
+- **POST /eventos/{id}/reservas/{reserva_id}/liberar:** Libera reserva y restituye cupo/asiento (`estado: LIBERADA`).
 
-#### Gestión del Organizador (requiere `X-User-Id` y `X-User-Role: organizador`)
-- `POST /eventos`: Crea evento en estado `BORRADOR`. Retorna 201.
-- `GET /eventos`: Lista eventos creados por el organizador en cualquier estado.
-- `GET /eventos/{id}`: Detalle de evento propio (403 si pertenece a otro organizador).
-- `PUT /eventos/{id}`: Edición de campos. Válido en `BORRADOR`. Retorna 409 si ya está publicado o si intenta cambiar precios/cupos de modalidades con compras.
-- `POST /eventos/{id}/publicar`: Valida completitud y cambia a `PUBLICADO`.
-- `POST /eventos/{id}/pausar`: Suspende la venta cambiando a `PAUSADO`.
-- `POST /eventos/{id}/despublicar`: Pasa a `BORRADOR` si no hubo ventas, o a `DESPUBLICADO` si existen ventas previas.
-
-#### Contratos para Bloque 3 (Compras)
-- `POST /eventos/{id}/reservar`:
-  ```json
-  { "tipo": "zona_general", "zona_id": "uuid", "cantidad": 2, "compra_id": "uuid" }
-  ```
-  o
-  ```json
-  { "tipo": "asiento_numerado", "asiento_id": "uuid", "compra_id": "uuid" }
-  ```
-  Retorna 200 con `reserva_id`, `estado: PENDIENTE` y `expira_en: NOW() + 10 MIN`. Retorna 409 si no hay cupo o venta no habilitada.
-- `POST /eventos/{id}/confirmar`:
-  ```json
-  { "reserva_id": "uuid", "compra_id": "uuid" }
-  ```
-  Valida que la reserva esté en `PENDIENTE` y `expira_en > NOW()`. Pasa el estado a `CONFIRMADA` y marca el stock como vendido definitivamente.
-- `POST /eventos/{id}/liberar`:
-  ```json
-  { "reserva_id": "uuid" }
-  ```
-  Pasa reserva a `LIBERADA` y reincorpora el cupo o libera el asiento.
-
-### 5. Estrategia de Concurrencia
-- **Asientos Numerados:** Bloqueo pesimista `SELECT ... FOR UPDATE` sobre la fila del asiento dentro de la transacción de reserva.
-- **Zonas Generales:** Actualización atómica condicional:
+### 4. Estrategia de Concurrencia
+- **Asientos numerados:** Bloqueo pesimista `SELECT ... FOR UPDATE` sobre la fila correspondiente en `modalidades_stock`.
+- **Zonas generales:** Update condicional atómico:
   ```sql
-  UPDATE zonas
+  UPDATE modalidades_stock
   SET cupo_disponible = cupo_disponible - :cantidad
-  WHERE id = :zona_id AND cupo_disponible >= :cantidad
+  WHERE id = :modalidad_id AND cupo_disponible >= :cantidad
   RETURNING id;
   ```
-  Si no retorna filas, no hubo cupo suficiente y se dispara 409 Conflict de inmediato sin condiciones de carrera.
-
-### 6. Descomposición de la Entrega en 3 Specs / PRs (~600 líneas c/u)
-1. **PR-1 (`publicacion-eventos`):** Migración completa Alembic inicial (`0001_initial_schema.py`), modelos ORM, schemas Pydantic, middleware HTTP de bitácora, configuración en Docker Compose y endpoints de gestión del organizador (`POST /eventos`, `GET /eventos`, `GET /eventos/{id}`, `PUT /eventos/{id}`) + suite de tests unitarios e integración.
-2. **PR-2 (`ciclo-de-vida-y-catalogo`):** Transiciones de estado (`publicar`, `pausar`, `despublicar`), validación de completitud, endpoints de catálogo público (`/catalogo/eventos`, `/catalogo/eventos/{id}`) con ocultamiento automático y cálculo de `venta_habilitada` + tests de integración.
-3. **PR-3 (`inventario-y-contratos`):** Contratos REST de reserva, confirmación y liberación para Compras, control de concurrencia y expiración por TTL (10 min) + tests de concurrencia y sobreventa.
-
-## Testing Strategy
-
-- **Entorno de ejecución:** Tests ejecutados 100% bajo Docker Compose con una base de datos PostgreSQL real y aislada, garantizando paridad absoluta con producción.
-- **Estrategia por PR:**
-  - **PR-1:** Tests unitarios de validación de modelos y serializadores Pydantic; tests de middleware HTTP (formato JSON de log y propagación de `X-Correlation-Id`); tests de integración para creación y edición de borradores (`conftest.py` con cliente `httpx.AsyncClient`).
-  - **PR-2:** Tests de transiciones de ciclo de vida (verificación de rechazo por datos incompletos en `/publicar`, bloqueo de edición al publicar); tests de catálogo público (ocultamiento automático de fechas pasadas, filtros multicriterio y paginación).
-  - **PR-3:** Tests de concurrencia y no-sobreventa mediante llamadas simultáneas (`asyncio.gather` / threads) sobre un mismo asiento (verificando exactamente un 200 y el resto 409) y sobrecupo en zonas generales; tests de ciclo de vida de reserva (confirmación en término vs. rechazo post-TTL y liberación atómica).
+  Si no retorna filas, no había cupo y se responde inmediatamente con 409 Conflict sin riesgo de sobreventa.
 
 ## Risks / Trade-offs
 
-- **[Riesgo: Reservas pendientes que expiran sin que Compras llame a liberar]** → **Mitigación:** Al consultar stock o intentar reservar, las reservas expiradas son filtradas y se implementará un barrido periódico o lazy de expiración.
-- **[Riesgo: Contención en reservas de alta concurrencia en la misma zona general]** → **Mitigación:** La query `UPDATE ... WHERE cupo_disponible >= n RETURNING` delega el locking a nivel de fila en PostgreSQL, garantizando transacciones ultracortas.
-- **[Riesgo: Exceder el límite de ~600 líneas por PR]** → **Mitigación:** Modularización estricta por vertical slices y postergación deliberada del frontend a un change separado.
+- **[Riesgo: Expiración de reservas sin llamada de Compras]** → **Mitigación:** Al momento de consultar disponibilidad o intentar reservar, las reservas en estado PENDIENTE con `expira_en < NOW()` se consideran expiradas y se reintegran de forma lazy.
