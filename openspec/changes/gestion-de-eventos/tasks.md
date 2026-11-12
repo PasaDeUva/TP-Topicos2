@@ -11,7 +11,7 @@
 
 - [ ] 2.1 Implementar middleware HTTP de bitácora en `app/main.py` registrando logs JSON a stdout con `duration_ms` y propagación de `X-Correlation-Id`.
 - [ ] 2.2 Configurar exception handler para validación de datos retornando `400 Bad Request` con `{"detail": "invalid body"}` ante campos faltantes o inválidos.
-- [ ] 2.3 Implementar schemas Pydantic v2 en `app/schemas.py` con validaciones: `nombre` requerido, `precio >= 0`, `capacidad > 0`, `tipo` ∈ {`numerado`, `general`}.
+- [ ] 2.3 Implementar schemas Pydantic v2 en `app/schemas.py` con validaciones: `nombre` requerido, `tipo` ∈ {`numerado`, `general`}.
 - [ ] 2.4 Implementar handlers en `app/routers.py`:
   - `GET /eventos`: lista completa del catálogo (activos e inactivos) con modalidades anidadas.
   - `GET /eventos/{id}`: detalle del evento con modalidades; 404 si no existe.
@@ -24,7 +24,7 @@
 - [ ] 3.1 Configurar fixtures de base de datos de test en `tests/conftest.py`.
 - [ ] 3.2 Implementar tests en `tests/test_eventos.py` validando:
   - Alta exitosa (201) y retorno de entidad con UUID generado.
-  - Validaciones 400 (`nombre` faltante, `precio` negativo, `capacidad <= 0`, `tipo` inválido).
+  - Validaciones 400 (`nombre` faltante, `tipo` inválido).
   - `GET /eventos` retorna activos e inactivos con modalidades.
   - `GET /eventos/{id}` devuelve 200 con entidad completa y 404 ante UUID inexistente.
   - `PUT /eventos/{id}` reemplaza modalidades (las omitidas desaparecen); retorna 400 y 404 según corresponda.

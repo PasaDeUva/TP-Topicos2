@@ -2,7 +2,7 @@
 
 ## Context
 
-Esta propuesta acota el alcance al CRUD del catálogo de eventos y sus modalidades de entrada. Las reservas, el control de stock y la concurrencia quedan formalmente diferidos al Bloque 3 (Compras). Ver [proposal.md](./proposal.md) y [specs/gestion-de-eventos/spec.md](./specs/gestion-de-eventos/spec.md).
+Esta propuesta acota el alcance al CRUD del catálogo de eventos y sus modalidades de entrada. Las reservas, el control de stock y la concurrencia quedan formalmente diferidos a etapas posteriores. Ver [proposal.md](./proposal.md) y [specs/gestion-de-eventos/spec.md](./specs/gestion-de-eventos/spec.md).
 
 ## Goals / Non-Goals
 
@@ -10,20 +10,20 @@ Esta propuesta acota el alcance al CRUD del catálogo de eventos y sus modalidad
 - Microservicio autónomo `events-service` con base de datos PostgreSQL 16 dedicada (`events_db`).
 - 5 endpoints REST canónicos para el catálogo de eventos (`GET`, `GET/{id}`, `POST`, `PUT/{id}`, `DELETE/{id}`).
 - Modelo relacional de 2 tablas (`eventos`, `modalidades`) con UUIDs autogenerados.
-- Validación estricta en handlers: `400 Bad Request` con `{"detail": "invalid body"}` ante campos faltantes o inválidos (`nombre` requerido, `precio >= 0`, `capacidad > 0`, `tipo` ∈ {`numerado`, `general`}).
+- `modalidades` define únicamente la forma de venta admitida: `tipo` ∈ {`numerado`, `general`}. No incluye precio ni capacidad.
+- Validación estricta en handlers: `400 Bad Request` con `{"detail": "invalid body"}` ante `nombre` faltante o `tipo` fuera del enum.
 - `PUT /eventos/{id}` con semántica de reemplazo total: las modalidades no incluidas en el body son eliminadas.
 - `DELETE /eventos/{id}` con baja lógica: `activo = false`, sin borrar el registro.
 - Middleware de observabilidad HTTP con logs estructurados JSON (`duration_ms`, `X-Correlation-Id`).
 - Implementación completa en un único Pull Request de ~300 líneas de código de producción.
 
 **Non-Goals:**
-- Reservas, confirmaciones y liberaciones de stock: diferidos al Bloque 3 (Compras).
+- Precio y capacidad en `modalidades`: diferidos al change de asientos y stock. El precio varía por sector o asiento; la capacidad en numeradas surge del mapa de asientos y en generales es un cupo. Guardarlos aquí crearía dos fuentes de verdad.
+- Reservas, confirmaciones y liberaciones de stock: diferidos a la etapa de compras/stock.
 - Control de concurrencia (`SELECT FOR UPDATE`, updates atómicos): fuera de esta etapa.
-- TTL de reservas: no aplica sin reservas.
-- Mapa de asientos individuales: `tipo` indica la modalidad de venta (numerado vs. general), no el seguimiento de asientos específicos.
-- Autenticación de organizador: `owner_id` viaja en el body; la validación de identidad se delega al Bloque 1 (Auth) en un change futuro.
+- Mapa de asientos individuales: `tipo` indica la modalidad de venta, no el seguimiento de asientos específicos.
+- Autenticación de organizador: `owner_id` viaja en el body; la validación de identidad se delega a un change futuro.
 - Máquina de estados compleja (Borrador/Pausado/Despublicado): reemplazada por baja lógica `activo: false`.
-- Inicio programado de venta (`fecha_inicio_venta`).
 
 ## Decisions
 
@@ -67,15 +67,13 @@ CREATE TABLE modalidades (
     id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     evento_id UUID NOT NULL REFERENCES eventos(id) ON DELETE CASCADE,
     nombre    VARCHAR(100) NOT NULL,
-    tipo      VARCHAR(20) NOT NULL CHECK (tipo IN ('numerado', 'general')),
-    precio    NUMERIC(10,2) NOT NULL CHECK (precio >= 0),
-    capacidad INTEGER NOT NULL CHECK (capacidad > 0)
+    tipo      VARCHAR(20) NOT NULL CHECK (tipo IN ('numerado', 'general'))
 );
 ```
 
-> `owner_id` identifica al organizador del evento. La autenticación real (validar que el token pertenece a ese `owner_id`) corresponde al Bloque 1 y se incorporará en un change futuro.
+> `owner_id` identifica al organizador del evento. La autenticación real (validar que el token pertenece a ese `owner_id`) se incorporará en un change futuro.
 
-> `tipo` representa la modalidad de venta: `numerado` (asientos asignados) o `general` (acceso libre). El mapa de asientos individuales y el control de stock quedan fuera de esta etapa.
+> `tipo` representa la forma de venta admitida: `numerado` (asientos asignados) o `general` (acceso libre). Precio, capacidad y mapa de asientos corresponden al change de asientos y stock.
 
 ### 3. Contratos REST
 
@@ -95,9 +93,9 @@ CREATE TABLE modalidades (
 - **PUT /eventos/{id}:** Reemplaza completamente el evento y **todas** sus modalidades. Las modalidades no incluidas en el body son eliminadas. Retorna 200 OK con la entidad actualizada.
 - **DELETE /eventos/{id}:** Aplica baja lógica (`activo = false`). El registro se preserva. Retorna 200 OK.
 
-**Validación 400 Bad Request:** FastAPI interceptará `RequestValidationError` para retornar status `400` con cuerpo `{"detail": "invalid body"}` ante: `nombre` faltante, `precio < 0`, `capacidad <= 0`, `tipo` fuera de {`numerado`, `general`}.
+**Validación 400 Bad Request:** FastAPI interceptará `RequestValidationError` para retornar status `400` con cuerpo `{"detail": "invalid body"}` ante `nombre` faltante o `tipo` fuera de {`numerado`, `general`}.
 
 ## Risks / Trade-offs
 
 - **[Trade-off: Reemplazo total en PUT]** La semántica de `PUT /eventos/{id}` elimina todas las modalidades y las recrea. Es la opción más simple y predecible dado que el catálogo de modalidades es pequeño y siempre se envía completo desde el organizador.
-- **[Deuda técnica: owner_id sin validación]** El campo `owner_id` se acepta sin validar identidad hasta que el Bloque 1 (Auth) esté integrado. Documentado en ADR-0003.
+- **[Deuda técnica: owner_id sin validación]** El campo `owner_id` se acepta sin validar identidad hasta que se integre el change de autenticación. Ver ADR-0003.

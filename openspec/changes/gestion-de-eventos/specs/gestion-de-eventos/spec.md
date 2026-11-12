@@ -7,22 +7,14 @@ Define el comportamiento observable para la gestión mínima del catálogo de ev
 ## ADDED Requirements
 
 ### Requirement: Alta de evento
-El sistema SHALL permitir crear un evento con sus modalidades mediante `POST /eventos`. El campo `nombre` es obligatorio. El campo `owner_id` viaja en el body; la autenticación del organizador se delega al Bloque 1 (Auth) en un change futuro. Los UUIDs del evento y sus modalidades SHALL ser autogenerados por el sistema.
+El sistema SHALL permitir crear un evento con sus modalidades mediante `POST /eventos`. El campo `nombre` es obligatorio. El campo `owner_id` viaja en el body; la autenticación del organizador se delega a un change futuro. Los UUIDs del evento y sus modalidades SHALL ser autogenerados por el sistema.
 
 #### Scenario: Creación exitosa de evento
-- **WHEN** se envía `POST /eventos` con `nombre`, `venue`, `fecha` y al menos una modalidad con `tipo` ∈ {`numerado`, `general`}, `precio >= 0` y `capacidad > 0`
+- **WHEN** se envía `POST /eventos` con `nombre`, `venue`, `fecha` y al menos una modalidad con `tipo` ∈ {`numerado`, `general`}
 - **THEN** el sistema genera un UUID para el evento y sus modalidades, persiste la entidad con `activo: true` y responde con código 201 Created
 
 #### Scenario: Creación rechazada por `nombre` faltante
 - **WHEN** se envía `POST /eventos` omitiendo el campo `nombre`
-- **THEN** el sistema responde con código 400 Bad Request y cuerpo `{"detail": "invalid body"}`
-
-#### Scenario: Creación rechazada por modalidad con `precio` negativo
-- **WHEN** se envía `POST /eventos` con una modalidad cuyo `precio` es negativo
-- **THEN** el sistema responde con código 400 Bad Request y cuerpo `{"detail": "invalid body"}`
-
-#### Scenario: Creación rechazada por modalidad con `capacidad` inválida
-- **WHEN** se envía `POST /eventos` con una modalidad cuyo `capacidad` es 0 o negativo
 - **THEN** el sistema responde con código 400 Bad Request y cuerpo `{"detail": "invalid body"}`
 
 #### Scenario: Creación rechazada por `tipo` inválido
@@ -58,7 +50,7 @@ El sistema SHALL permitir reemplazar completamente un evento y todas sus modalid
 - **THEN** el sistema responde con código 404 Not Found
 
 #### Scenario: Edición rechazada por datos inválidos
-- **WHEN** se envía `PUT /eventos/{id}` omitiendo `nombre` o con modalidades inválidas (`precio` negativo, `capacidad <= 0`, `tipo` fuera del enum)
+- **WHEN** se envía `PUT /eventos/{id}` omitiendo `nombre` o con modalidades cuyo `tipo` no pertenece al enum
 - **THEN** el sistema responde con código 400 Bad Request y cuerpo `{"detail": "invalid body"}`
 
 ### Requirement: Baja lógica de evento
