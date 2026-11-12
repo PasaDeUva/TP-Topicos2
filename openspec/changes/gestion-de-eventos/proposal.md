@@ -2,37 +2,36 @@
 
 ## Why
 
-El sistema de Ticketera Virtual necesita un servicio central y autónomo para persistir eventos y gestionar el stock de entradas (asientos numerados y zonas generales), permitiendo que el Bloque 3 (Compras) pueda consultar disponibilidad y reservar tickets de forma atómica.
-
-Tras la revisión de alcance con el equipo (2026-11-11), esta propuesta acota el alcance a lo estrictamente indispensable para cumplir los requerimientos de la Etapa I del TP, evitando sobre-ingeniería en ciclos de vida complejos.
+Se quiere desarrollar un microservicio de gestión de eventos que permita consultar, dar de alta, editar y dar de baja eventos, junto con sus modalidades de entrada (numerada o general). El servicio es la fuente de verdad del catálogo de eventos para la plataforma de ticketera virtual. La venta, las reservas y el control de stock quedan fuera de esta etapa.
 
 ## What Changes
 
 - Creación del microservicio `backend/events-service/` con FastAPI, Pydantic v2, SQLAlchemy 2, Alembic y PostgreSQL dedicado (`events_db`).
-- Superficie de API compacta:
-  - `GET /eventos` y `GET /eventos/{id}`: consulta de eventos y stock (retorna entidades tanto activas como inactivas).
-  - `POST /eventos`: endpoint unificado de upsert (creación sin id, actualización con id) y baja lógica (`activo: false`). Validación estricta con `400 Bad Request` ante campos faltantes.
-  - `POST /eventos/{id}/reservar`: reserva atómica con TTL de 10 minutos para Compras con prevención de sobreventa.
-  - `POST /eventos/{id}/reservas/{reserva_id}/confirmar` y `liberar`: confirmación post-pago y restitución de inventario.
-- Modelo relacional simplificado en 3 tablas (`eventos`, `modalidades_stock`, `reservas`) con identificadores UUID autogenerados.
+- Superficie de API REST canónica de 5 endpoints:
+  - `GET /eventos`: listado completo del catálogo (activos e inactivos).
+  - `GET /eventos/{id}`: detalle de un evento con sus modalidades. Retorna 404 si no existe.
+  - `POST /eventos`: alta de evento con sus modalidades. Retorna 201 Created o 400 Bad Request.
+  - `PUT /eventos/{id}`: reemplazo completo del evento y sus modalidades. Retorna 200 OK, 400 o 404.
+  - `DELETE /eventos/{id}`: baja lógica (`activo = false`). Retorna 200 OK o 404.
+- Modelo relacional de 2 tablas (`eventos`, `modalidades`) con identificadores UUID autogenerados.
 - Middleware HTTP de bitácora que emite logs JSON estructurados a stdout (`method`, `path`, `status_code`, `duration_ms`, `X-Correlation-Id`).
-- La implementación completa se empaqueta en un único Pull Request de ~450 líneas de código de producción.
+- La implementación completa se empaqueta en un único Pull Request de ~300 líneas de código de producción.
 
-## Ideas Descartadas / Pospuestas para Etapa II y III
+## Ideas Descartadas / Pospuestas
 
-En acuerdo con el equipo, las siguientes funcionalidades quedan formalmente fuera del alcance de la Etapa I:
-- **Máquina de estados compleja (Borrador / Pausado / Despublicado):** Pospuesta; reemplazada por baja lógica mediante flag `activo: false`.
-- **Venta programada (`fecha_inicio_venta`):** Descartada para Etapa I; los eventos creados admiten reservas de inmediato si están activos.
-- **Ocultamiento automático por fecha:** Descartado para simplificar los contratos de consulta; el estado `activo` y las fechas viajan en el payload para interpretación del consumidor.
-- **Búsqueda multicriterio avanzada (participantes, géneros):** Pospuesta formalmente a la Etapa III según el cronograma del TP.
-- **Endpoints separados de creación y edición (POST vs PUT):** Unificado en `POST /eventos`.
-- **Precarga / Seed automático:** Descartado; la creación de eventos de prueba se realiza vía API en pruebas de integración.
+- **Máquina de estados compleja (Borrador / Pausado / Despublicado):** Reemplazada por baja lógica mediante flag `activo: false`.
+- **Venta programada (`fecha_inicio_venta`):** Descartada para esta etapa.
+- **Ocultamiento automático por fecha:** Descartado; el flag `activo` y las fechas viajan en el payload para interpretación del consumidor.
+- **Búsqueda multicriterio avanzada:** Pospuesta a Bloque 3 (Compras).
+- **Endpoint unificado de upsert (`POST /eventos`):** Reemplazado por los 5 endpoints REST canónicos.
+- **Reservas, stock y control de concurrencia (TTL, `SELECT FOR UPDATE`, `reservas`):** Pospuestos formalmente al Bloque 3 (Compras). No forman parte del catálogo de eventos.
+- **Precarga / Seed automático:** Descartado; los datos de prueba se crean vía API en tests de integración.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `gestion-de-eventos`: Gestión integral de eventos (upsert y baja lógica), consulta pública de catálogo y contratos de reserva/confirmación/liberación atómica de inventario con TTL de 10 minutos.
+- `gestion-de-eventos`: CRUD de eventos y sus modalidades de entrada (numerada o general). El servicio actúa como fuente de verdad del catálogo para la plataforma.
 
 ### Modified Capabilities
 
@@ -40,6 +39,6 @@ En acuerdo con el equipo, las siguientes funcionalidades quedan formalmente fuer
 
 ## Impact
 
-- **Nuevas APIs:** Endpoints bajo `/eventos` para consulta, gestión de organizador y contratos de inventario para Compras.
-- **Base de datos:** Instancia dedicada PostgreSQL (`events_db`) con tablas `eventos`, `modalidades_stock` y `reservas`.
-- **Testing:** 100% pytest en Docker Compose cubriendo validaciones 400 Bad Request, concurrencia en reservas y ciclo de reserva/confirmación.
+- **Nuevas APIs:** 5 endpoints REST bajo `/eventos` para consulta y gestión del catálogo.
+- **Base de datos:** Instancia dedicada PostgreSQL (`events_db`) con 2 tablas: `eventos` y `modalidades`.
+- **Testing:** 100% pytest en Docker Compose cubriendo altas, ediciones, bajas lógicas, validaciones 400 Bad Request y consultas.

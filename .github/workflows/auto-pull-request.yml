@@ -33,7 +33,7 @@ jobs:
               BASE_BRANCH="development"
               ;;
             release/*|hotfix/*)
-              BASE_BRANCH="main"
+              BASE_BRANCH="master"
               ;;
             *)
               echo "::error::Unsupported branch: $SOURCE_BRANCH"

@@ -2,24 +2,28 @@
 
 ## Context
 
-Tras la reunión de equipo del 2026-11-11, se redujo el diseño para enfocarse exclusivamente en lo indispensable para cumplir la Etapa I: permitir la venta de tickets garantizando unicidad y consistencia en la concurrencia, sin sobre-ingeniería en ciclos de vida. Ver [proposal.md](./proposal.md) y [specs/gestion-de-eventos/spec.md](./specs/gestion-de-eventos/spec.md).
+Esta propuesta acota el alcance al CRUD del catálogo de eventos y sus modalidades de entrada. Las reservas, el control de stock y la concurrencia quedan formalmente diferidos al Bloque 3 (Compras). Ver [proposal.md](./proposal.md) y [specs/gestion-de-eventos/spec.md](./specs/gestion-de-eventos/spec.md).
 
 ## Goals / Non-Goals
 
 **Goals:**
 - Microservicio autónomo `events-service` con base de datos PostgreSQL 16 dedicada (`events_db`).
-- Superficie mínima de API: 4 endpoints directos (`GET /eventos`, `GET /eventos/{id}`, `POST /eventos` para upsert/baja lógica, y operaciones de reserva para Compras).
-- Manejo de UUIDs autogenerados para todas las entidades.
-- Validación estricta en handlers: retornar `400 Bad Request` con `{"detail": "invalid body"}` ante cualquier campo obligatorio faltante.
-- Garantizar no-sobreventa bajo concurrencia mediante `SELECT FOR UPDATE` (asientos numerados) y updates atómicos condicionales (zonas generales).
+- 5 endpoints REST canónicos para el catálogo de eventos (`GET`, `GET/{id}`, `POST`, `PUT/{id}`, `DELETE/{id}`).
+- Modelo relacional de 2 tablas (`eventos`, `modalidades`) con UUIDs autogenerados.
+- Validación estricta en handlers: `400 Bad Request` con `{"detail": "invalid body"}` ante campos faltantes o inválidos (`nombre` requerido, `precio >= 0`, `capacidad > 0`, `tipo` ∈ {`numerado`, `general`}).
+- `PUT /eventos/{id}` con semántica de reemplazo total: las modalidades no incluidas en el body son eliminadas.
+- `DELETE /eventos/{id}` con baja lógica: `activo = false`, sin borrar el registro.
 - Middleware de observabilidad HTTP con logs estructurados JSON (`duration_ms`, `X-Correlation-Id`).
-- Implementación completa en un único Pull Request de ~450 líneas de código de producción.
+- Implementación completa en un único Pull Request de ~300 líneas de código de producción.
 
 **Non-Goals:**
+- Reservas, confirmaciones y liberaciones de stock: diferidos al Bloque 3 (Compras).
+- Control de concurrencia (`SELECT FOR UPDATE`, updates atómicos): fuera de esta etapa.
+- TTL de reservas: no aplica sin reservas.
+- Mapa de asientos individuales: `tipo` indica la modalidad de venta (numerado vs. general), no el seguimiento de asientos específicos.
+- Autenticación de organizador: `owner_id` viaja en el body; la validación de identidad se delega al Bloque 1 (Auth) en un change futuro.
 - Máquina de estados compleja (Borrador/Pausado/Despublicado): reemplazada por baja lógica `activo: false`.
-- Validación de inicio programado de venta (`fecha_inicio_venta`).
-- Ocultamiento automático complejo de fechas; las fechas y el flag `activo` viajan en el payload de consulta.
-- Interfaz gráfica React (diferida a spec/PR posterior).
+- Inicio programado de venta (`fecha_inicio_venta`).
 
 ## Decisions
 
@@ -37,79 +41,63 @@ backend/events-service/
 │   ├── main.py             # FastAPI app + middleware bitácora HTTP + exception handlers (400)
 │   ├── config.py           # Settings y variables de entorno
 │   ├── database.py         # Conexión SQLAlchemy async con PostgreSQL
-│   ├── models.py           # Modelos ORM (eventos, modalidades_stock, reservas)
+│   ├── models.py           # Modelos ORM (eventos, modalidades)
 │   ├── schemas.py          # DTOs Pydantic v2
-│   ├── services.py         # Lógica de dominio y concurrencia de reservas
-│   └── routers.py          # Handlers de /eventos y /eventos/{id}/reservar...
+│   └── routers.py          # Handlers de /eventos
 └── tests/
     ├── conftest.py
-    ├── test_eventos.py     # Tests de creación, edición, baja lógica y consultas
-    └── test_reservas.py    # Tests de concurrencia, TTL y prevención de sobreventa
+    └── test_eventos.py     # Tests de alta, edición, baja lógica, consultas y validaciones 400
 ```
 
-### 2. Modelo Relacional Simplificado (3 Tablas)
+### 2. Modelo Relacional (2 Tablas)
 
 ```sql
 CREATE TABLE eventos (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    nombre VARCHAR(255) NOT NULL,
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_id    UUID NOT NULL,
+    nombre      VARCHAR(255) NOT NULL,
     descripcion TEXT,
-    venue VARCHAR(255) NOT NULL,
-    fecha TIMESTAMPTZ NOT NULL,
-    activo BOOLEAN NOT NULL DEFAULT TRUE,
-    creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    venue       VARCHAR(255) NOT NULL,
+    fecha       TIMESTAMPTZ NOT NULL,
+    activo      BOOLEAN NOT NULL DEFAULT TRUE,
+    creado_en   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE modalidades_stock (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+CREATE TABLE modalidades (
+    id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     evento_id UUID NOT NULL REFERENCES eventos(id) ON DELETE CASCADE,
-    tipo VARCHAR(20) NOT NULL,           -- 'numerado' | 'general'
-    nombre VARCHAR(100) NOT NULL,        -- 'Platea VIP', 'Campo'
-    precio NUMERIC(10,2) NOT NULL,
-    asiento_codigo VARCHAR(20),          -- 'A-1' (NULL si general)
-    cupo_total INT,                      -- NULL si numerado
-    cupo_disponible INT,                 -- NULL si numerado
-    estado_asiento VARCHAR(20),          -- 'DISPONIBLE','RESERVADO','VENDIDO' (NULL si general)
-    UNIQUE (evento_id, asiento_codigo)
-);
-
-CREATE TABLE reservas (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    evento_id UUID NOT NULL REFERENCES eventos(id),
-    modalidad_id UUID NOT NULL REFERENCES modalidades_stock(id),
-    compra_id UUID NOT NULL,
-    asiento_codigo VARCHAR(20),
-    cantidad INT NOT NULL DEFAULT 1,
-    estado VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE', -- 'PENDIENTE','CONFIRMADA','LIBERADA'
-    expira_en TIMESTAMPTZ NOT NULL,
-    creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    nombre    VARCHAR(100) NOT NULL,
+    tipo      VARCHAR(20) NOT NULL CHECK (tipo IN ('numerado', 'general')),
+    precio    NUMERIC(10,2) NOT NULL CHECK (precio >= 0),
+    capacidad INTEGER NOT NULL CHECK (capacidad > 0)
 );
 ```
 
-### 3. Contratos REST y Manejo de Errores
+> `owner_id` identifica al organizador del evento. La autenticación real (validar que el token pertenece a ese `owner_id`) corresponde al Bloque 1 y se incorporará en un change futuro.
 
-- **Validación 400 Bad Request:** FastAPI interceptará `RequestValidationError` para devolver status code `400` y cuerpo `{"detail": "invalid body"}` si falta cualquier campo obligatorio (`nombre`, `venue`, `fecha`, o modalidades válidas con precio > 0).
-- **GET /eventos:** Devuelve la lista completa de eventos incluyendo el valor booleano de `activo` (permite visualizar eventos activos e inactivos).
-- **GET /eventos/{id}:** Devuelve el detalle del evento y modalidades con su atributo `activo`. Retorna 404 si el UUID no existe.
-- **POST /eventos:**
-  - Sin `id`: Crea evento nuevo y modalidades con UUIDs autogenerados. Retorna 201 Created.
-  - Con `id`: Actualiza campos provistos. Retorna 200 OK.
-  - Con `id` y `"activo": false`: Aplica baja lógica al evento. Retorna 200 OK.
-- **POST /eventos/{id}/reservar:** Bloquea inventario con TTL de 10 min. Retorna 200 OK con `reserva_id` o 409 Conflict si no hay stock o el evento está inactivo (`activo: false`).
-- **POST /eventos/{id}/reservas/{reserva_id}/confirmar:** Confirma reserva post-pago (`estado: CONFIRMADA`).
-- **POST /eventos/{id}/reservas/{reserva_id}/liberar:** Libera reserva y restituye cupo/asiento (`estado: LIBERADA`).
+> `tipo` representa la modalidad de venta: `numerado` (asientos asignados) o `general` (acceso libre). El mapa de asientos individuales y el control de stock quedan fuera de esta etapa.
 
-### 4. Estrategia de Concurrencia
-- **Asientos numerados:** Bloqueo pesimista `SELECT ... FOR UPDATE` sobre la fila correspondiente en `modalidades_stock`.
-- **Zonas generales:** Update condicional atómico:
-  ```sql
-  UPDATE modalidades_stock
-  SET cupo_disponible = cupo_disponible - :cantidad
-  WHERE id = :modalidad_id AND cupo_disponible >= :cantidad
-  RETURNING id;
-  ```
-  Si no retorna filas, no había cupo y se responde inmediatamente con 409 Conflict sin riesgo de sobreventa.
+### 3. Contratos REST
+
+| Endpoint | Método | Respuestas |
+|---|---|---|
+| `/eventos` | GET | 200 |
+| `/eventos/{id}` | GET | 200, 404 |
+| `/eventos` | POST | 201, 400 |
+| `/eventos/{id}` | PUT | 200, 400, 404 |
+| `/eventos/{id}` | DELETE | 200, 404 |
+
+**Detalle de contratos:**
+
+- **GET /eventos:** Retorna lista completa del catálogo incluyendo eventos con `activo: false`. Incluye modalidades anidadas.
+- **GET /eventos/{id}:** Retorna detalle del evento y sus modalidades. 404 si el UUID no existe.
+- **POST /eventos:** Crea evento y modalidades con UUIDs autogenerados. Retorna 201 Created con la entidad creada.
+- **PUT /eventos/{id}:** Reemplaza completamente el evento y **todas** sus modalidades. Las modalidades no incluidas en el body son eliminadas. Retorna 200 OK con la entidad actualizada.
+- **DELETE /eventos/{id}:** Aplica baja lógica (`activo = false`). El registro se preserva. Retorna 200 OK.
+
+**Validación 400 Bad Request:** FastAPI interceptará `RequestValidationError` para retornar status `400` con cuerpo `{"detail": "invalid body"}` ante: `nombre` faltante, `precio < 0`, `capacidad <= 0`, `tipo` fuera de {`numerado`, `general`}.
 
 ## Risks / Trade-offs
 
-- **[Riesgo: Expiración de reservas sin llamada de Compras]** → **Mitigación:** Al momento de consultar disponibilidad o intentar reservar, las reservas en estado PENDIENTE con `expira_en < NOW()` se consideran expiradas y se reintegran de forma lazy.
+- **[Trade-off: Reemplazo total en PUT]** La semántica de `PUT /eventos/{id}` elimina todas las modalidades y las recrea. Es la opción más simple y predecible dado que el catálogo de modalidades es pequeño y siempre se envía completo desde el organizador.
+- **[Deuda técnica: owner_id sin validación]** El campo `owner_id` se acepta sin validar identidad hasta que el Bloque 1 (Auth) esté integrado. Documentado en ADR-0003.
