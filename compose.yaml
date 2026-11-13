@@ -43,5 +43,36 @@ services:
       mock-service:
         condition: service_started
 
+  events-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: events_db
+      POSTGRES_USER: events
+      POSTGRES_PASSWORD: events
+    ports:
+      - "5433:5432"
+    volumes:
+      - events-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U events -d events_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  events-service:
+    build:
+      context: ./backend/events-service
+    environment:
+      DATABASE_URL: postgresql+psycopg://events:events@events-db:5432/events_db
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./backend/events-service:/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    depends_on:
+      events-db:
+        condition: service_healthy
+
 volumes:
   postgres-data:
+  events-db-data:
