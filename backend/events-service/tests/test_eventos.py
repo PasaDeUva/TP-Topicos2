@@ -1,14 +1,13 @@
 import uuid
 
-import pytest
 from httpx import AsyncClient
 
 from tests.conftest import evento_payload
 
-
 # ---------------------------------------------------------------------------
 # POST /eventos — Alta
 # ---------------------------------------------------------------------------
+
 
 async def test_crear_evento_success(client: AsyncClient):
     payload = evento_payload()
@@ -47,6 +46,7 @@ async def test_crear_evento_failsWhenTipoInvalido(client: AsyncClient):
 # GET /eventos — Listado
 # ---------------------------------------------------------------------------
 
+
 async def test_listar_eventos_success(client: AsyncClient):
     await client.post("/eventos", json=evento_payload(nombre="Evento A"))
     await client.post("/eventos", json=evento_payload(nombre="Evento B"))
@@ -77,6 +77,7 @@ async def test_listar_eventos_incluyeInactivos(client: AsyncClient):
 # GET /eventos/{id} — Detalle
 # ---------------------------------------------------------------------------
 
+
 async def test_obtener_evento_success(client: AsyncClient):
     r = await client.post("/eventos", json=evento_payload())
     evento_id = r.json()["id"]
@@ -97,6 +98,7 @@ async def test_obtener_evento_failsWhenNoExiste(client: AsyncClient):
 # ---------------------------------------------------------------------------
 # PUT /eventos/{id} — Edición completa
 # ---------------------------------------------------------------------------
+
 
 async def test_editar_evento_success(client: AsyncClient):
     r = await client.post(
@@ -148,6 +150,7 @@ async def test_editar_evento_failsWhenNombreFaltante(client: AsyncClient):
 # DELETE /eventos/{id} — Baja lógica
 # ---------------------------------------------------------------------------
 
+
 async def test_eliminar_evento_success(client: AsyncClient):
     r = await client.post("/eventos", json=evento_payload())
     evento_id = r.json()["id"]
@@ -172,10 +175,13 @@ async def test_eliminar_evento_failsWhenNoExiste(client: AsyncClient):
 # Bitácora HTTP
 # ---------------------------------------------------------------------------
 
+
 async def test_bitacora_propagaCorrelationId(client: AsyncClient):
     correlation_id = str(uuid.uuid4())
 
-    response = await client.get("/eventos", headers={"X-Correlation-Id": correlation_id})
+    response = await client.get(
+        "/eventos", headers={"X-Correlation-Id": correlation_id}
+    )
 
     assert response.status_code == 200
     assert response.headers.get("x-correlation-id") == correlation_id

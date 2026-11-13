@@ -1,17 +1,28 @@
 import asyncio
+import os
 import uuid
 from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.database import get_session
 from app.main import app
 from app.models import Base
 
-TEST_DATABASE_URL = "postgresql+psycopg://events:events@events-db:5432/events_db"
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL",
+    os.getenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://events:events@events-db:5432/events_db",
+    ),
+)
 
 
 @pytest.fixture(scope="session")
@@ -42,7 +53,9 @@ async def session(engine) -> AsyncGenerator[AsyncSession, None]:
 @pytest_asyncio.fixture()
 async def client(session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides[get_session] = lambda: session
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as c:
         yield c
     app.dependency_overrides.clear()
 
@@ -50,6 +63,7 @@ async def client(session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 # ---------------------------------------------------------------------------
 # Payload factory helpers
 # ---------------------------------------------------------------------------
+
 
 def evento_payload(**overrides) -> dict:
     base = {

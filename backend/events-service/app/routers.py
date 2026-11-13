@@ -15,8 +15,7 @@ router = APIRouter(prefix="/eventos", tags=["eventos"])
 def _build_modalidades(evento: Evento, payload: EventoIn) -> None:
     """Reemplaza las modalidades del evento con las del payload."""
     evento.modalidades = [
-        Modalidad(nombre=m.nombre, tipo=m.tipo)
-        for m in payload.modalidades
+        Modalidad(nombre=m.nombre, tipo=m.tipo) for m in payload.modalidades
     ]
 
 
@@ -29,7 +28,9 @@ async def listar_eventos(session: AsyncSession = Depends(get_session)):
 
 
 @router.get("/{evento_id}", response_model=EventoOut)
-async def obtener_evento(evento_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
+async def obtener_evento(
+    evento_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+):
     result = await session.execute(
         select(Evento)
         .where(Evento.id == evento_id)
@@ -42,7 +43,9 @@ async def obtener_evento(evento_id: uuid.UUID, session: AsyncSession = Depends(g
 
 
 @router.post("", response_model=EventoOut, status_code=201)
-async def crear_evento(payload: EventoIn, session: AsyncSession = Depends(get_session)):
+async def crear_evento(
+    payload: EventoIn, session: AsyncSession = Depends(get_session)
+):
     evento = Evento(
         owner_id=payload.owner_id,
         nombre=payload.nombre,
@@ -85,7 +88,9 @@ async def editar_evento(
 
 
 @router.delete("/{evento_id}", response_model=EventoOut)
-async def eliminar_evento(evento_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
+async def eliminar_evento(
+    evento_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+):
     result = await session.execute(
         select(Evento)
         .where(Evento.id == evento_id)
