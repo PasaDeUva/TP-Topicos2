@@ -38,8 +38,11 @@ jobs:
       - name: Build application images
         run: docker compose build
 
+      - name: Start test database
+        run: docker compose up -d events-db --wait
+
       - name: Lint backend
-        run: docker compose run --rm --no-deps backend-tests python -m ruff check mock-service
+        run: docker compose run --rm --no-deps backend-tests python -m ruff check mock-service events-service
 
       - name: Test backend
         run: docker compose run --rm --no-deps backend-tests
