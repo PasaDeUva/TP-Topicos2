@@ -17,6 +17,10 @@ El sistema MUST permitir el registro de clientes con email y contraseña, habili
 - **WHEN** una persona intenta crear una cuenta con un email ya registrado
 - **THEN** el sistema rechaza la creación de una cuenta duplicada sin modificar la cuenta existente
 
+#### Scenario: Email con formato inválido
+- **WHEN** una persona intenta registrarse con un email de formato inválido
+- **THEN** el sistema rechaza el registro sin crear una cuenta
+
 ### Requirement: Registro de organizadores
 El sistema MUST permitir solicitar el rol de organizador con email y contraseña. El rol permanece pendiente de habilitación hasta que un administrador lo habilite, sin exigir verificación de email en la Etapa I.
 
@@ -76,16 +80,12 @@ El sistema MUST permitir renovar el acceso mediante una credencial de renovació
 - **WHEN** una persona renueva su sesión y resta menos de una hora para cumplir las 24 horas desde el inicio
 - **THEN** la nueva credencial de acceso vence a más tardar al alcanzar ese límite
 
-### Requirement: Protección de la sesión web
-Para el cliente web, Identity MUST entregar la credencial de renovación mediante una cookie HttpOnly y MUST exigir un token CSRF válido asociado a la sesión para renovar o cerrar sesión. El cliente MUST mantener la credencial de acceso en memoria. El cierre de sesión MUST revocar la renovación y eliminar la cookie de renovación.
-
-#### Scenario: Renovación sin protección CSRF válida
-- **WHEN** se solicita renovar una sesión sin un token CSRF válido asociado a ella
-- **THEN** Identity rechaza la solicitud sin renovar la sesión
+### Requirement: Cierre de sesión
+El sistema MUST permitir cerrar una sesión y revocar su credencial de renovación.
 
 #### Scenario: Cierre de sesión
-- **WHEN** una persona solicita cerrar sesión con protección CSRF válida
-- **THEN** Identity revoca la renovación de esa sesión y elimina su cookie de renovación
+- **WHEN** una persona solicita cerrar su sesión
+- **THEN** Identity revoca la credencial de renovación de esa sesión
 
 #### Scenario: Reutilización después del cierre
 - **WHEN** se intenta renovar una sesión cuya renovación fue revocada por el cierre
@@ -139,6 +139,10 @@ El sistema MUST permitir que una misma cuenta tenga roles de cliente y organizad
 - **WHEN** un organizador autenticado solicita el rol de cliente
 - **THEN** el sistema agrega el rol de cliente activo a su cuenta sin modificar el estado de organizador
 
+#### Scenario: Solicitud de un rol ya asignado
+- **WHEN** una persona autenticada solicita un rol que ya tiene asignado
+- **THEN** el sistema rechaza la solicitud sin modificar la cuenta ni el estado de sus roles
+
 ### Requirement: Acceso de organizador pendiente
 El sistema MUST permitir iniciar sesión a un organizador pendiente para consultar su estado y MUST NOT otorgarle permisos de organizador habilitado.
 
@@ -182,6 +186,18 @@ El sistema MUST impedir las funciones del rol organizador deshabilitado y conser
 #### Scenario: Cuenta con rol cliente activo
 - **WHEN** se deshabilita el rol organizador de una cuenta que tiene rol cliente activo
 - **THEN** la persona puede seguir accediendo como cliente pero no como organizador habilitado
+
+#### Scenario: Nueva operación después de la deshabilitación
+- **WHEN** un servicio verifica la autorización para una nueva operación de organizador después de que su rol fue deshabilitado
+- **THEN** el servicio rechaza la operación aunque la credencial de acceso siga vigente
+
+#### Scenario: Operación autorizada antes de la deshabilitación
+- **WHEN** una operación de organizador ya fue autorizada antes de que se deshabilite el rol
+- **THEN** el sistema puede permitir que esa operación finalice
+
+#### Scenario: Estado de rol no disponible
+- **WHEN** un servicio no puede verificar el estado actual del rol de organizador para una nueva operación protegida
+- **THEN** el servicio rechaza la operación
 
 #### Scenario: Cuenta sin otro rol activo
 - **WHEN** una persona cuyo único rol es organizador deshabilitado intenta iniciar sesión

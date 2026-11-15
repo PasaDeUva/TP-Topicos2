@@ -13,6 +13,8 @@ Identity emitirá JWT de acceso firmados con RS256 y una clave privada, con vige
 
 Para acciones protegidas por rol, los consumidores consultarán a Identity el estado actual de la cuenta y sus roles mediante una interfaz interna por identificador de cuenta. Cada servicio se autenticará con una credencial propia y separada; si no se puede verificar el estado, se rechazará la operación protegida. Eventos verificará además la propiedad del evento, y Compras asociará compras y consultas al identificador de la persona autenticada.
 
+Una vez efectiva la deshabilitación del rol organizador, las nuevas operaciones cuya autorización se verifique después de ese cambio se rechazarán, aunque el JWT siga vigente. Las operaciones autorizadas antes de la deshabilitación podrán finalizar. La integración deberá consultar el estado vigente sin usar datos obsoletos para esa decisión.
+
 Las credenciales no incluirán contraseñas. Los secretos y claves reales se suministrarán fuera del repositorio. Para desarrollo local se permiten credenciales de demostración reemplazables y generación persistente de claves; solo Identity recibe la clave privada. Antes de integrar los servicios, el equipo debe acordar los detalles del contrato, la protección del canal, la distribución confiable de la clave pública y los procedimientos de rotación y revocación.
 
 Cerrar una sesión revoca su credencial de renovación, pero no invalida inmediatamente un JWT ya emitido y verificado localmente: este puede seguir siendo válido hasta su vencimiento. Los roles se consultan de nuevo para las acciones protegidas.
