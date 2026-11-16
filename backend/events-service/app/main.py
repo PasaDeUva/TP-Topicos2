@@ -16,9 +16,25 @@ app.include_router(router)
 async def bitacora(request: Request, call_next):
     correlation_id = request.headers.get("X-Correlation-Id", str(uuid.uuid4()))
     start = time.perf_counter()
-    response = await call_next(request)
-    duration_ms = round((time.perf_counter() - start) * 1000, 2)
+    try:
+        response = await call_next(request)
+    except Exception:
+        duration_ms = round((time.perf_counter() - start) * 1000, 2)
+        log = {
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": 500,
+            "duration_ms": duration_ms,
+            "correlation_id": correlation_id,
+        }
+        print(json.dumps(log), flush=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "internal server error"},
+            headers={"X-Correlation-Id": correlation_id},
+        )
 
+    duration_ms = round((time.perf_counter() - start) * 1000, 2)
     log = {
         "method": request.method,
         "path": request.url.path,

@@ -252,3 +252,30 @@ async def test_bitacora_propagaCorrelationId(client: AsyncClient):
 
     assert response.status_code == 200
     assert response.headers.get("x-correlation-id") == correlation_id
+
+
+async def test_bitacora_registraError500(client: AsyncClient, capsys):
+    correlation_id = str(uuid.uuid4())
+
+    async def _failing_get_session():
+        raise RuntimeError("database connection failed")
+        yield
+
+    from app.database import get_session
+    from app.main import app
+
+    app.dependency_overrides[get_session] = _failing_get_session
+
+    try:
+        response = await client.get(
+            "/eventos", headers={"X-Correlation-Id": correlation_id}
+        )
+        assert response.status_code == 500
+        assert response.headers.get("x-correlation-id") == correlation_id
+        assert response.json() == {"detail": "internal server error"}
+
+        captured = capsys.readouterr()
+        assert correlation_id in captured.out
+        assert '"status_code": 500' in captured.out
+    finally:
+        app.dependency_overrides.clear()
