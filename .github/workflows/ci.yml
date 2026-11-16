@@ -41,6 +41,12 @@ jobs:
       - name: Start test database
         run: docker compose up -d events-db --wait
 
+      - name: Migrate events database
+        run: docker compose run --rm events-service alembic upgrade head
+
+      - name: Check database migration drift
+        run: docker compose run --rm events-service alembic check
+
       - name: Lint backend
         run: docker compose run --rm --no-deps backend-tests python -m ruff check mock-service events-service
 

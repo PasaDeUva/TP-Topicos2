@@ -8,6 +8,7 @@ tiene su propia subcarpeta, código, dependencias y tests.
 | Servicio | Carpeta | Compose |
 |---|---|---|
 | Mock service | [`mock-service/`](mock-service/) | `mock-service` |
+| Events service | [`events-service/`](events-service/) | `events-service` |
 
 Los nombres de Compose son los que se usan en `docker compose run`. Los
 comandos son los mismos en Windows, macOS y Linux.
@@ -18,6 +19,7 @@ Desde la raíz del repositorio:
 
 ```bash
 docker compose run --rm mock-service pytest
+docker compose run --rm backend-tests sh -c "cd events-service && pytest"
 ```
 
 Para otro microservicio, se utiliza su nombre en Compose:
@@ -36,8 +38,9 @@ docker compose run --rm backend-tests
 ```
 
 Cada nuevo microservicio backend debe mantener sus tests dentro de su propia
-carpeta y declarar sus dependencias en `requirements.txt` para que el runner
+carpeta y declarar sus dependencias en `requirements.txt` (o `requirements-dev.txt`) para que el runner
 los incluya automáticamente.
 
-El servicio `mock-service` está documentado en
-[`mock-service/README.md`](mock-service/README.md).
+Los servicios están documentados en:
+- [`mock-service/README.md`](mock-service/README.md)
+- [`events-service/README.md`](events-service/README.md)

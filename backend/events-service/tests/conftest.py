@@ -1,11 +1,10 @@
-import asyncio
 import os
 import uuid
 from collections.abc import AsyncGenerator
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -18,22 +17,38 @@ from app.models import Base
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
-    os.getenv(
-        "DATABASE_URL",
-        "postgresql+psycopg://events:events@events-db:5432/events_db",
-    ),
+    "postgresql+psycopg://events:events@events-db:5432/events_test",
 )
 
+if "/events_db" in TEST_DATABASE_URL:
+    raise RuntimeError(
+        "Refusing to run tests against development database 'events_db'. "
+        "Set TEST_DATABASE_URL to a dedicated test database (e.g. events_test)."
+    )
 
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+
+async def _ensure_test_database_exists(db_url: str) -> None:
+    """Asegura que la base de datos de test exista antes de conectar."""
+    db_name = db_url.rsplit("/", 1)[-1].split("?")[0]
+    for maint_db in ("postgres", "events_db"):
+        try:
+            maint_url = db_url.rsplit("/", 1)[0] + f"/{maint_db}"
+            engine_admin = create_async_engine(maint_url, isolation_level="AUTOCOMMIT")
+            async with engine_admin.connect() as conn:
+                res = await conn.execute(
+                    text(f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'")
+                )
+                if not res.scalar():
+                    await conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+            await engine_admin.dispose()
+            break
+        except Exception:
+            continue
 
 
 @pytest_asyncio.fixture(scope="session")
 async def engine():
+    await _ensure_test_database_exists(TEST_DATABASE_URL)
     eng = create_async_engine(TEST_DATABASE_URL, echo=False)
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)

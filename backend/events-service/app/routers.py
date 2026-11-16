@@ -22,7 +22,9 @@ def _build_modalidades(evento: Evento, payload: EventoIn) -> None:
 @router.get("", response_model=list[EventoOut])
 async def listar_eventos(session: AsyncSession = Depends(get_session)):
     result = await session.execute(
-        select(Evento).options(selectinload(Evento.modalidades))
+        select(Evento)
+        .options(selectinload(Evento.modalidades))
+        .order_by(Evento.creado_en.asc())
     )
     return result.scalars().all()
 
@@ -43,9 +45,7 @@ async def obtener_evento(
 
 
 @router.post("", response_model=EventoOut, status_code=201)
-async def crear_evento(
-    payload: EventoIn, session: AsyncSession = Depends(get_session)
-):
+async def crear_evento(payload: EventoIn, session: AsyncSession = Depends(get_session)):
     evento = Evento(
         owner_id=payload.owner_id,
         nombre=payload.nombre,

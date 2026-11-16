@@ -33,8 +33,55 @@ async def test_crear_evento_failsWhenNombreFaltante(client: AsyncClient):
     assert response.json() == {"detail": "invalid body"}
 
 
+async def test_crear_evento_failsWhenNombreVacio(client: AsyncClient):
+    payload = evento_payload(nombre="")
+
+    response = await client.post("/eventos", json=payload)
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "invalid body"}
+
+
+async def test_crear_evento_failsWhenNombreDemasiadoLargo(client: AsyncClient):
+    payload = evento_payload(nombre="A" * 256)
+
+    response = await client.post("/eventos", json=payload)
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "invalid body"}
+
+
 async def test_crear_evento_failsWhenTipoInvalido(client: AsyncClient):
     payload = evento_payload(modalidades=[{"nombre": "VIP", "tipo": "invalido"}])
+
+    response = await client.post("/eventos", json=payload)
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "invalid body"}
+
+
+async def test_crear_evento_failsWhenSinModalidades(client: AsyncClient):
+    payload = evento_payload(modalidades=[])
+
+    response = await client.post("/eventos", json=payload)
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "invalid body"}
+
+
+async def test_crear_evento_failsWhenModalidadNombreDemasiadoLargo(
+    client: AsyncClient,
+):
+    payload = evento_payload(modalidades=[{"nombre": "M" * 101, "tipo": "general"}])
+
+    response = await client.post("/eventos", json=payload)
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "invalid body"}
+
+
+async def test_crear_evento_failsWhenFechaSinTimezone(client: AsyncClient):
+    payload = evento_payload(fecha="2027-03-20T18:00:00")
 
     response = await client.post("/eventos", json=payload)
 
@@ -73,6 +120,19 @@ async def test_listar_eventos_incluyeInactivos(client: AsyncClient):
     assert todos[evento_id]["activo"] is False
 
 
+async def test_listar_eventos_ordenDeterminista(client: AsyncClient):
+    await client.post("/eventos", json=evento_payload(nombre="Primero"))
+    await client.post("/eventos", json=evento_payload(nombre="Segundo"))
+
+    response = await client.get("/eventos")
+
+    assert response.status_code == 200
+    eventos = response.json()
+    assert len(eventos) >= 2
+    for i in range(len(eventos) - 1):
+        assert eventos[i]["creado_en"] <= eventos[i + 1]["creado_en"]
+
+
 # ---------------------------------------------------------------------------
 # GET /eventos/{id} — Detalle
 # ---------------------------------------------------------------------------
@@ -93,6 +153,13 @@ async def test_obtener_evento_failsWhenNoExiste(client: AsyncClient):
     response = await client.get(f"/eventos/{uuid.uuid4()}")
 
     assert response.status_code == 404
+
+
+async def test_obtener_evento_failsWhenUUIDInvalido(client: AsyncClient):
+    response = await client.get("/eventos/no-es-un-uuid")
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "invalid path parameter"}
 
 
 # ---------------------------------------------------------------------------

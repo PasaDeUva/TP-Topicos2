@@ -2,11 +2,11 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 
 class ModalidadIn(BaseModel):
-    nombre: str
+    nombre: str = Field(min_length=1, max_length=100)
     tipo: Literal["numerado", "general"]
 
 
@@ -20,11 +20,18 @@ class ModalidadOut(BaseModel):
 
 class EventoIn(BaseModel):
     owner_id: uuid.UUID
-    nombre: str
+    nombre: str = Field(min_length=1, max_length=255)
     descripcion: str | None = None
-    venue: str
+    venue: str = Field(min_length=1, max_length=255)
     fecha: datetime
-    modalidades: list[ModalidadIn]
+    modalidades: list[ModalidadIn] = Field(min_length=1)
+
+    @field_validator("fecha")
+    @classmethod
+    def validate_fecha_timezone(cls, v: datetime) -> datetime:
+        if v.tzinfo is None or v.tzinfo.utcoffset(v) is None:
+            raise ValueError("fecha must include timezone offset")
+        return v
 
 
 class EventoOut(BaseModel):

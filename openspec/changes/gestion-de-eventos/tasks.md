@@ -2,7 +2,7 @@
 
 ## 1. Scaffolding, Base de Datos y Modelos
 
-- [x] 1.1 Crear estructura de directorios en `backend/events-service/`, archivo `Dockerfile` y `pyproject.toml` con FastAPI, SQLAlchemy 2, Alembic, Pydantic v2 y Psycopg3.
+- [x] 1.1 Crear estructura de directorios en `backend/events-service/`, archivo `Dockerfile`, `requirements.txt` y `pyproject.toml` con FastAPI, SQLAlchemy 2, Alembic, Pydantic v2 y Psycopg3.
 - [x] 1.2 Configurar `compose.yaml` agregando los servicios `events-db` (PostgreSQL 16) y `events-service` con variables de entorno y volúmenes.
 - [x] 1.3 Configurar Alembic y generar la migración inicial `0001_initial_schema.py` creando las 2 tablas (`eventos`, `modalidades`) con IDs UUID autogenerados.
 - [x] 1.4 Implementar modelos ORM de SQLAlchemy en `app/models.py` respetando la relación `evento → modalidades` con CASCADE.

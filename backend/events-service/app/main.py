@@ -34,4 +34,10 @@ async def bitacora(request: Request, call_next):
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError):
+    for err in exc.errors():
+        loc = err.get("loc", ())
+        if "path" in loc:
+            return JSONResponse(
+                status_code=400, content={"detail": "invalid path parameter"}
+            )
     return JSONResponse(status_code=400, content={"detail": "invalid body"})
