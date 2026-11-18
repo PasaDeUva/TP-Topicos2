@@ -5,11 +5,11 @@ WORKDIR /workspace
 COPY . .
 
 RUN set -eux; \
-    for dir in */; do \
-      if [ -f "$dir/requirements-dev.txt" ]; then \
-        pip install --no-cache-dir -r "$dir/requirements-dev.txt"; \
-      elif [ -f "$dir/requirements.txt" ]; then \
-        pip install --no-cache-dir -r "$dir/requirements.txt"; \
+    for service in */; do \
+      if [ -f "$service/requirements-dev.txt" ]; then \
+        pip install --no-cache-dir -r "$service/requirements-dev.txt"; \
+      elif [ -f "$service/requirements.txt" ]; then \
+        pip install --no-cache-dir -r "$service/requirements.txt"; \
       fi; \
     done
 

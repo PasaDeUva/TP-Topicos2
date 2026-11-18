@@ -43,7 +43,7 @@ Este modelo describe entidades y restricciones, no el DDL definitivo: la migraci
 
 ### Credencial e integración
 
-Identity autentica email y contraseña y emite un JWT de acceso con vigencia máxima de una hora, firmado con RS256 mediante clave privada. Los servicios consumidores verificarán firma con clave pública confiable, algoritmo esperado, emisor, audiencia y vencimiento. Para operaciones protegidas consultarán a Identity el estado actual de los roles, sin confiar únicamente en claims del token. El intercambio de JWT y las alternativas se registran en [ADR-0004](../../../docs/adr/0004-autenticacion-entre-servicios.md), propuesto para revisión del equipo.
+Identity autentica email y contraseña y emite un JWT de acceso con vigencia máxima de una hora, firmado con RS256 mediante clave privada. Los servicios consumidores verificarán firma con clave pública confiable, algoritmo esperado, emisor, audiencia y vencimiento. Para operaciones protegidas consultarán a Identity el estado actual de los roles, sin confiar únicamente en claims del token. El intercambio de JWT y las alternativas se registran en [ADR-0004](../../../docs/adr/0004-autenticacion-entre-servicios.md), aceptado por el equipo.
 
 La renovación utiliza una credencial separada y rotativa: cada uso exitoso invalida la anterior y emite otra junto con un nuevo JWT. La sesión termina como máximo 24 horas después del inicio de sesión y ningún JWT emitido puede vencer después de ese límite. Detectar la reutilización de una credencial anterior revoca la sesión; Identity conserva el estado necesario y rechaza renovaciones de cuentas sin acceso permitido.
 
