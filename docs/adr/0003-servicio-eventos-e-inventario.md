@@ -1,6 +1,6 @@
 # ADR-0003: Microservicio de Gestión de Eventos — Catálogo Mínimo
 
-- Estado: Propuesto
+- Estado: Aceptado
 - Fecha: 2026-11-12
 - Supersede: versión anterior que incluía reservas, TTL y control de concurrencia
 

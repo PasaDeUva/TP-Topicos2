@@ -4,6 +4,8 @@ from datetime import datetime
 from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+ACCOUNT_EMAIL_CONSTRAINT = "uq_accounts_email"
+
 
 class Base(DeclarativeBase):
     pass
@@ -11,9 +13,10 @@ class Base(DeclarativeBase):
 
 class Account(Base):
     __tablename__ = "accounts"
+    __table_args__ = (UniqueConstraint("email", name=ACCOUNT_EMAIL_CONSTRAINT),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
 
 

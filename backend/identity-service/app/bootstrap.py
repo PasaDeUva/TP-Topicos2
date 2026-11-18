@@ -53,7 +53,10 @@ def main() -> None:
     with Session(_engine()) as session:
         initialize_admin(session, os.environ["ADMIN_EMAIL"], os.environ["ADMIN_PASSWORD"])
         session.commit()
-    os.execvp("uvicorn", ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"])
+    command = ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    if os.environ.get("IDENTITY_ENV") == "local" and os.environ.get("UVICORN_RELOAD") == "true":
+        command.extend(["--reload", "--reload-dir", "/app/app"])
+    os.execvp("uvicorn", command)
 
 
 if __name__ == "__main__":

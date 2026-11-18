@@ -66,9 +66,10 @@ docker compose run --rm mock-app npm run build
 El frontend consulta `/api/health`; Vite redirige esa ruta al servicio
 `mock-service` dentro de la red de Compose.
 
-`backend-tests` es el runner de toda la carpeta `backend/`: inicia la base de
-pruebas de Identity, aplica sus migraciones y ejecuta los tests de los
-microservicios que tengan una carpeta `tests/`.
+`backend-tests` es el runner de toda la carpeta `backend/`: inicia las instancias
+de Identity y Events, prepara la base de prueba de Identity y ejecuta los tests de
+los microservicios que tengan una carpeta `tests/`. Identity aplica sus
+migraciones al iniciar sus tests.
 Consultar la documentación específica en [`backend/README.md`](backend/README.md)
 y [`backend/identity-service/README.md`](backend/identity-service/README.md).
 

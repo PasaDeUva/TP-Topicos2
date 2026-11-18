@@ -10,12 +10,13 @@ from app.accounts import create_account
 from app.database import _engine
 from app.models import Account, RoleAssignment, Session as LoginSession
 from app.passwords import hash_password
+from app.schemas import PASSWORD_MAX_LENGTH
 
 
 def initialize_admin(session: Session, email: str, password: str) -> bool:
     email = TypeAdapter(EmailStr).validate_python(email)
-    if len(password) < 8:
-        raise ValueError("Password must contain at least 8 characters")
+    if not 8 <= len(password) <= PASSWORD_MAX_LENGTH:
+        raise ValueError(f"Password must contain between 8 and {PASSWORD_MAX_LENGTH} characters")
     session.execute(text("SELECT pg_advisory_xact_lock(72486101)"))
     existing = session.scalar(select(RoleAssignment.id).where(RoleAssignment.role == "administrador"))
     if existing is not None:
@@ -30,8 +31,8 @@ def initialize_admin(session: Session, email: str, password: str) -> bool:
 
 def recover_admin(session: Session, email: str, password: str) -> None:
     email = TypeAdapter(EmailStr).validate_python(email)
-    if len(password) < 8:
-        raise ValueError("Password must contain at least 8 characters")
+    if not 8 <= len(password) <= PASSWORD_MAX_LENGTH:
+        raise ValueError(f"Password must contain between 8 and {PASSWORD_MAX_LENGTH} characters")
     account = session.scalar(
         select(Account).join(RoleAssignment, RoleAssignment.account_id == Account.id)
         .where(Account.email == email, RoleAssignment.role == "administrador")

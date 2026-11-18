@@ -24,9 +24,9 @@ from app.schemas import Login, RefreshRequest
 
 @pytest.fixture
 def client(monkeypatch):
-    url = os.environ.get("TEST_DATABASE_URL")
+    url = os.environ.get("IDENTITY_TEST_DATABASE_URL")
     if not url:
-        pytest.fail("TEST_DATABASE_URL is required for PostgreSQL persistence tests")
+        pytest.fail("IDENTITY_TEST_DATABASE_URL is required for PostgreSQL persistence tests")
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     private = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
     public = key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
@@ -69,6 +69,32 @@ def test_invalid_registration(client, changes):
     payload = {"email": f"{uuid.uuid4()}@example.com", "password": "password123", "role": "cliente"}
     payload.update(changes)
     assert client.post("/auth/register", json=payload).status_code == 400
+
+
+def test_password_and_refresh_token_length_limits(client):
+    email = f"{uuid.uuid4()}@example.com"
+    password = "a" * 1024
+    assert client.post("/auth/register", json={"email": email, "password": password, "role": "cliente"}).status_code == 201
+    assert client.post("/auth/login", json={"email": email, "password": password}).status_code == 200
+    too_long = "a" * 1025
+    assert client.post("/auth/register", json={"email": f"{uuid.uuid4()}@example.com", "password": too_long, "role": "cliente"}).status_code == 400
+    assert client.post("/auth/login", json={"email": email, "password": too_long}).status_code == 400
+    for endpoint in ("/auth/refresh", "/auth/logout"):
+        assert client.post(endpoint, json={"refresh_token": "x" * 257}).status_code == 400
+
+
+def test_openapi_documents_success_response_models(client):
+    paths = client.get("/openapi.json").json()["paths"]
+    expected = {
+        ("/auth/login", "post"): "TokenOut",
+        ("/auth/refresh", "post"): "TokenOut",
+        ("/auth/me/roles", "post"): "RolesOut",
+        ("/admin/organizers/{account_id}/status", "patch"): "OrganizerStatusOut",
+        ("/internal/accounts/{account_id}/roles", "get"): "AccountRolesOut",
+    }
+    for (path, method), model in expected.items():
+        schema = paths[path][method]["responses"]["200"]["content"]["application/json"]["schema"]
+        assert schema["$ref"] == f"#/components/schemas/{model}"
 
 
 def test_login_and_request_additional_role(client):
@@ -127,6 +153,20 @@ def test_pending_organizer_can_login_and_request_client_role(client):
     roles = client.post("/auth/me/roles", headers=headers, json={"role": "cliente"})
     assert roles.status_code == 200
     assert {item["role"]: item["status"] for item in roles.json()["roles"]} == {"cliente": "activo", "organizador": "pendiente"}
+
+
+def test_roles_are_returned_in_stable_order(client, monkeypatch):
+    monkeypatch.setenv("SERVICE_CREDENTIALS_JSON", json.dumps({"events": {"token": "events-secret", "roles_read": True}}))
+    payload = {"email": f"{uuid.uuid4()}@example.com", "password": "password123", "role": "organizador"}
+    account_id = client.post("/auth/register", json=payload).json()["account_id"]
+    access = client.post("/auth/login", json={"email": payload["email"], "password": payload["password"]}).json()["access_token"]
+    user_headers = {"Authorization": f"Bearer {access}"}
+    roles_response = client.post("/auth/me/roles", headers=user_headers, json={"role": "cliente"})
+    me = client.get("/auth/me", headers=user_headers)
+    internal = client.get(f"/internal/accounts/{account_id}/roles", headers={"X-Service-Id": "events", "X-Service-Token": "events-secret"})
+    for response in (roles_response, me, internal):
+        assert response.status_code == 200
+        assert [role["role"] for role in response.json()["roles"]] == ["cliente", "organizador"]
 
 
 def test_get_me_requires_authentication_and_omits_password(client):
@@ -272,7 +312,7 @@ def test_refresh_respects_absolute_session_limit(client, minutes_remaining):
 
 
 def test_concurrent_refresh_revokes_session(client):
-    engine = create_engine(os.environ["TEST_DATABASE_URL"])
+    engine = create_engine(os.environ["IDENTITY_TEST_DATABASE_URL"])
     email = f"{uuid.uuid4()}@example.com"
     with Session(engine) as db:
         account = create_account(db, email, "password123")

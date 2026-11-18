@@ -33,6 +33,6 @@
 
 ## Workflow follow-up
 
-- Revisar el ADR-0004 propuesto con el equipo antes de acordar la integración.
+- Acordar con los equipos consumidores los detalles pendientes de integración del ADR-0004 aceptado.
 - Coordinar la integración efectiva de Eventos y Compras, el canal seguro y la distribución y rotación de claves en un cambio posterior.
 - Al integrar el cliente web en un cambio posterior, retomar los requisitos de sesión web de `design.md` y definir y probar la cookie, CSRF, CORS, el cierre de sesión y la coordinación de renovaciones en navegador.

@@ -14,13 +14,18 @@ from sqlalchemy.orm import Session
 
 from app.accounts import create_account
 from app.database import get_session
-from app.models import Account, RefreshCredential, RoleAssignment, Session as LoginSession
+from app.models import ACCOUNT_EMAIL_CONSTRAINT, Account, RefreshCredential, RoleAssignment, Session as LoginSession
+from app.observability import request_log
 from app.passwords import verify_password
-from app.schemas import AccountOut, Login, OrganizerStatus, RefreshRequest, Registration, RoleOut, RoleRequest
+from app.schemas import (
+    AccountOut, AccountRolesOut, Login, OrganizerStatus, OrganizerStatusOut,
+    RefreshRequest, Registration, RoleOut, RoleRequest, RolesOut, TokenOut,
+)
 from app.service_auth import authorize_service
 from app.tokens import issue_access_token, verify_access_token
 
 app = FastAPI(title="Identity Service")
+app.middleware("http")(request_log)
 bearer = HTTPBearer(auto_error=False)
 
 
@@ -43,7 +48,7 @@ def register(payload: Registration, session: Session = Depends(get_session)):
         session.commit()
     except IntegrityError as exc:
         session.rollback()
-        if getattr(exc.orig.diag, "constraint_name", None) == "accounts_email_key":
+        if getattr(exc.orig.diag, "constraint_name", None) == ACCOUNT_EMAIL_CONSTRAINT:
             return JSONResponse(status_code=409, content={"code": "email_exists", "message": "Email already registered"})
         raise
     return AccountOut(account_id=account.id, email=account.email, roles=[RoleOut(role=payload.role, status=status)])
@@ -67,7 +72,7 @@ def current_account(credentials: HTTPAuthorizationCredentials | None = Depends(b
     return account
 
 
-@app.post("/auth/login")
+@app.post("/auth/login", response_model=TokenOut)
 def login(payload: Login, session: Session = Depends(get_session)):
     account = session.scalar(select(Account).where(Account.email == payload.email).with_for_update())
     if account is None or not verify_password(payload.password, account.password_hash):
@@ -100,7 +105,7 @@ def locked_refresh_session(session: Session, refresh_token: str):
     return login_session, credential
 
 
-@app.post("/auth/refresh")
+@app.post("/auth/refresh", response_model=TokenOut)
 def refresh(payload: RefreshRequest, session: Session = Depends(get_session)):
     login_session, credential = locked_refresh_session(session, payload.refresh_token)
     now = datetime.now(timezone.utc)
@@ -132,7 +137,7 @@ def logout(payload: RefreshRequest, session: Session = Depends(get_session)):
     return Response(status_code=204)
 
 
-@app.post("/auth/me/roles")
+@app.post("/auth/me/roles", response_model=RolesOut)
 def request_role(payload: RoleRequest, account: Account = Depends(current_account), session: Session = Depends(get_session)):
     status = "activo" if payload.role == "cliente" else "pendiente"
     session.add(RoleAssignment(account_id=account.id, role=payload.role, status=status))
@@ -143,13 +148,13 @@ def request_role(payload: RoleRequest, account: Account = Depends(current_accoun
         if getattr(exc.orig.diag, "constraint_name", None) == "uq_role_assignments_account_role":
             raise HTTPException(status_code=409, detail="role_exists") from None
         raise
-    roles = session.scalars(select(RoleAssignment).where(RoleAssignment.account_id == account.id)).all()
+    roles = session.scalars(select(RoleAssignment).where(RoleAssignment.account_id == account.id).order_by(RoleAssignment.role)).all()
     return {"roles": [{"role": role.role, "status": role.status} for role in roles]}
 
 
 @app.get("/auth/me", response_model=AccountOut)
 def get_me(account: Account = Depends(current_account), session: Session = Depends(get_session)):
-    roles = session.scalars(select(RoleAssignment).where(RoleAssignment.account_id == account.id)).all()
+    roles = session.scalars(select(RoleAssignment).where(RoleAssignment.account_id == account.id).order_by(RoleAssignment.role)).all()
     return AccountOut(
         account_id=account.id,
         email=account.email,
@@ -157,7 +162,7 @@ def get_me(account: Account = Depends(current_account), session: Session = Depen
     )
 
 
-@app.patch("/admin/organizers/{account_id}/status")
+@app.patch("/admin/organizers/{account_id}/status", response_model=OrganizerStatusOut)
 def set_organizer_status(account_id: UUID, payload: OrganizerStatus, account: Account = Depends(current_account), session: Session = Depends(get_session)):
     admin = session.scalar(select(RoleAssignment).where(RoleAssignment.account_id == account.id, RoleAssignment.role == "administrador", RoleAssignment.status == "activo"))
     if admin is None:
@@ -170,9 +175,9 @@ def set_organizer_status(account_id: UUID, payload: OrganizerStatus, account: Ac
     return {"account_id": str(account_id), "status": payload.status}
 
 
-@app.get("/internal/accounts/{account_id}/roles", dependencies=[Depends(authorize_service)])
+@app.get("/internal/accounts/{account_id}/roles", response_model=AccountRolesOut, dependencies=[Depends(authorize_service)])
 def get_account_roles(account_id: UUID, session: Session = Depends(get_session)):
     if session.get(Account, account_id) is None:
         raise HTTPException(status_code=404, detail="not_found")
-    roles = session.scalars(select(RoleAssignment).where(RoleAssignment.account_id == account_id)).all()
+    roles = session.scalars(select(RoleAssignment).where(RoleAssignment.account_id == account_id).order_by(RoleAssignment.role)).all()
     return {"account_id": str(account_id), "roles": [{"role": role.role, "status": role.status} for role in roles]}
