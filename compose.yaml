@@ -106,6 +106,7 @@ services:
     environment:
       IDENTITY_ENV: local
       UVICORN_RELOAD: "true"
+      PYTHONDONTWRITEBYTECODE: "1"
       WATCHFILES_FORCE_POLLING: ${IDENTITY_WATCHFILES_FORCE_POLLING:-true}
       DATABASE_URL: postgresql+psycopg://identity:identity@identity-dev-db:5432/identity_db
       JWT_PRIVATE_DIR: /keys/private

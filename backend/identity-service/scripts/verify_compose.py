@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import traceback
 import uuid
 from pathlib import Path
 from urllib.error import HTTPError
@@ -62,6 +63,7 @@ def administrator_count():
 
 def verify():
     compose("up", "-d", "--build", "--wait", "identity-service")
+    compose("exec", "-T", "identity-service", "python", "-c", "import sys; assert sys.dont_write_bytecode")
     compose("run", "--rm", "identity-test-db-init")
     compose("run", "--rm", "identity-test-db-init")
     databases = compose("exec", "-T", "identity-dev-db", "psql", "-U", "identity", "-d", "postgres", "-Atc", "SELECT datname FROM pg_database WHERE datname IN ('identity_db', 'identity_test') ORDER BY datname", capture=True).splitlines()
@@ -119,6 +121,7 @@ def verify():
     assert {"method", "path", "status_code", "duration_ms", "correlation_id"} <= error.keys()
     assert password not in logs and ENV["IDENTITY_ADMIN_PASSWORD"] not in logs
     assert user["refresh_token"] not in logs and renewed["refresh_token"] not in logs
+    assert not list((ROOT / "backend" / "identity-service").rglob("__pycache__"))
     print("Compose integration: isolated databases, reload, bootstrap, HTTP flow, restart and structured logs passed")
 
 
@@ -133,5 +136,8 @@ if __name__ == "__main__":
         )
         try:
             verify()
+        except Exception:
+            traceback.print_exc()
+            raise
         finally:
             compose("down", "--volumes", "--remove-orphans")
