@@ -13,7 +13,9 @@
 - Tests que corran sin `events-service`, simulando su respuesta HTTP.
 
 **Non-Goals:**
-- Cupos, stock, montos, pagos, numeradas, devoluciones y colas (ver "Fuera de alcance" en el proposal).
+- Cupos, stock, montos, pagos, entradas numeradas, devoluciones y colas (ver "Fuera de alcance" en el proposal).
+- Integración con `payment-service` y estados de la compra (reserva, pago, confirmación): ver "Flujo objetivo" en el proposal.
+- Compra de varios tickets en una misma compra (entradas generales por cantidad o entradas numeradas por asiento), con un límite X por compra.
 - Copiar o cachear datos del catálogo dentro de Compras.
 - Autenticar al cliente: `cliente_id` viaja en el body como dato temporal.
 - Reintentos automáticos o circuit breaker hacia Eventos.
@@ -108,7 +110,8 @@ El handler de `RequestValidationError` replica el de Eventos: `400` con `{"detai
 - **[Compras depende de la disponibilidad de Eventos]** → Responde `503` sin registrar nada; los reintentos con la misma clave son seguros. Los reintentos ya registrados no consultan a Eventos.
 - **[Evento dado de baja después de la compra]** → Compras no se entera; la compra queda registrada. Se resolverá con el change de stock o con eventos asíncronos.
 - **[`cliente_id` sin autenticar]** → Cualquiera puede registrar o listar compras de otro cliente. Deuda explícita hasta integrar Identity ([ADR-0004](../../../docs/adr/0004-autenticacion-entre-servicios.md)).
-- **[Sin cantidad ni monto]** → Una compra es solo la elección de evento y modalidad; no reserva ni cobra nada. El modelo se ampliará con el change de asientos, stock y pagos mediante migraciones.
+- **[Sin cantidad ni monto]** → Una compra es solo la elección de evento y modalidad; no reserva ni cobra nada. El modelo se ampliará con el change de asientos, stock y pagos mediante migraciones, incluida la cantidad de tickets (modalidad general) o los asientos (modalidad numerada) de una misma compra, hasta un límite X.
+- **[Compra sin estado]** → Hoy una compra registrada es definitiva. Cuando exista el flujo reserva → pago → confirmación, se agregará un campo de estado a `compras` por migración; las compras de esta etapa se tratarán como ya confirmadas.
 - **[Una compra distinta del mismo cliente para el mismo evento]** → Se permite con otra clave: sin cupos no hay regla de unicidad por persona.
 
 ## Migration Plan
