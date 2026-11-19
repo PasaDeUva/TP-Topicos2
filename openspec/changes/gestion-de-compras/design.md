@@ -100,7 +100,7 @@ El handler de `RequestValidationError` replica el de Eventos: `400` con `{"detai
 
 ### 6. Infraestructura
 
-- `compose.yaml`: `compras-db` (PostgreSQL 16, puerto `5434:5432`, volumen propio, script de init con `compras_test`) y `compras-service` (puerto `8002:8000`, `EVENTS_SERVICE_URL`, `depends_on` de `compras-db` saludable y de `events-service`).
+- `compose.yaml`: `compras-db` (PostgreSQL 16, puerto `5436:5432`, volumen propio, script de init con `compras_test`) y `compras-service` (puerto `8003:8000`, `EVENTS_SERVICE_URL`, `depends_on` de `compras-db` saludable y de `events-service`).
 - `backend-tests` recibe `COMPRAS_TEST_DATABASE_URL`, porque `TEST_DATABASE_URL` ya apunta a la base de Eventos. El `conftest.py` de Compras rechaza correr contra `compras_db`, igual que el de Eventos.
 - CI: agregar `compras-db`, `alembic upgrade head`, `alembic check` y `ruff check compras-service`.
 - Documentación: filas de `compras-service` en `backend/README.md` y `docs/local-development.md`, más un `README.md` propio del servicio.

@@ -3,7 +3,7 @@
 ## 1. Servicio, base de datos e infraestructura
 
 - [ ] 1.1 Crear `backend/compras-service/` con `Dockerfile`, `entrypoint.sh`, `pyproject.toml`, `requirements.txt` y `requirements-dev.txt` (mismas versiones que `events-service`, con `httpx` en runtime); verificar con `docker compose build compras-service`.
-- [ ] 1.2 Agregar `compras-db` (PostgreSQL 16, puerto `5434`, volumen propio, `scripts/init-test-db.sql` con `compras_test`) y `compras-service` (puerto `8002`, `EVENTS_SERVICE_URL`, `depends_on`) a `compose.yaml`, y `COMPRAS_TEST_DATABASE_URL` a `backend-tests`; verificar con `docker compose up -d compras-db compras-service` y `curl http://localhost:8002/docs`.
+- [ ] 1.2 Agregar `compras-db` (PostgreSQL 16, puerto `5436`, volumen propio, `scripts/init-test-db.sql` con `compras_test`) y `compras-service` (puerto `8003`, `EVENTS_SERVICE_URL`, `depends_on`) a `compose.yaml`, y `COMPRAS_TEST_DATABASE_URL` a `backend-tests`; verificar con `docker compose up -d compras-db compras-service` y `curl http://localhost:8003/docs`.
 - [ ] 1.3 Configurar Alembic, implementar el modelo `Compra` en `app/models.py` y generar la migración `0001_initial_schema.py` con la restricción `UNIQUE (cliente_id, idempotency_key)` y el índice por cliente; verificar con `docker compose run --rm compras-service alembic upgrade head` y `alembic check`.
 - [ ] 1.4 Implementar `app/config.py` y `app/database.py`, y documentar el servicio en `backend/compras-service/README.md`, `backend/README.md` y `docs/local-development.md`; verificar que los comandos documentados se ejecutan tal cual.
 
