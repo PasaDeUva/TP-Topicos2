@@ -3,13 +3,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
 
-PASSWORD_MAX_LENGTH = 1024
-REFRESH_TOKEN_MAX_LENGTH = 256
+PASSWORD_MIN_LENGTH = 8
 
 
 class Registration(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8, max_length=PASSWORD_MAX_LENGTH)
+    password: str = Field(min_length=PASSWORD_MIN_LENGTH)
     role: Literal["cliente", "organizador"]
 
 
@@ -26,7 +25,7 @@ class AccountOut(BaseModel):
 
 class Login(BaseModel):
     email: EmailStr
-    password: str = Field(max_length=PASSWORD_MAX_LENGTH)
+    password: str
 
 
 class RoleRequest(BaseModel):
@@ -34,7 +33,7 @@ class RoleRequest(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str = Field(min_length=1, max_length=REFRESH_TOKEN_MAX_LENGTH)
+    refresh_token: str = Field(min_length=1)
 
 
 class OrganizerStatus(BaseModel):
@@ -59,3 +58,8 @@ class AccountRolesOut(RolesOut):
 class OrganizerStatusOut(BaseModel):
     account_id: UUID
     status: Literal["habilitado", "deshabilitado"]
+
+
+class ErrorOut(BaseModel):
+    code: str
+    message: str

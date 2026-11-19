@@ -18,13 +18,13 @@ from app.models import ACCOUNT_EMAIL_CONSTRAINT, Account, RefreshCredential, Rol
 from app.observability import request_log
 from app.passwords import verify_password
 from app.schemas import (
-    AccountOut, AccountRolesOut, Login, OrganizerStatus, OrganizerStatusOut,
-    RefreshRequest, Registration, RoleOut, RoleRequest, RolesOut, TokenOut,
+    AccountOut, AccountRolesOut, ErrorOut, Login, OrganizerStatus, OrganizerStatusOut,
+    PASSWORD_MIN_LENGTH, RefreshRequest, Registration, RoleOut, RoleRequest, RolesOut, TokenOut,
 )
 from app.service_auth import authorize_service
 from app.tokens import issue_access_token, verify_access_token
 
-app = FastAPI(title="Identity Service")
+app = FastAPI(title="Identity Service", responses={500: {"model": ErrorOut, "description": "Internal server error"}})
 app.middleware("http")(request_log)
 bearer = HTTPBearer(auto_error=False)
 
@@ -36,10 +36,17 @@ def health() -> dict[str, str]:
 
 @app.exception_handler(RequestValidationError)
 def invalid_request(request: Request, exc: RequestValidationError):
+    if request.method == "POST" and request.url.path == "/auth/register":
+        for error in exc.errors():
+            if error.get("loc") == ("body", "password") and error.get("type") == "string_too_short":
+                return JSONResponse(
+                    status_code=400,
+                    content={"code": "invalid_request", "message": f"Password must contain at least {PASSWORD_MIN_LENGTH} characters"},
+                )
     return JSONResponse(status_code=400, content={"code": "invalid_request", "message": "Invalid request"})
 
 
-@app.post("/auth/register", response_model=AccountOut, status_code=201)
+@app.post("/auth/register", response_model=AccountOut, status_code=201, responses={400: {"model": ErrorOut}, 409: {"model": ErrorOut}})
 def register(payload: Registration, session: Session = Depends(get_session)):
     try:
         account = create_account(session, payload.email, payload.password)
@@ -72,7 +79,7 @@ def current_account(credentials: HTTPAuthorizationCredentials | None = Depends(b
     return account
 
 
-@app.post("/auth/login", response_model=TokenOut)
+@app.post("/auth/login", response_model=TokenOut, responses={400: {"model": ErrorOut}, 401: {"model": ErrorOut}})
 def login(payload: Login, session: Session = Depends(get_session)):
     account = session.scalar(select(Account).where(Account.email == payload.email).with_for_update())
     if account is None or not verify_password(payload.password, account.password_hash):
@@ -105,7 +112,7 @@ def locked_refresh_session(session: Session, refresh_token: str):
     return login_session, credential
 
 
-@app.post("/auth/refresh", response_model=TokenOut)
+@app.post("/auth/refresh", response_model=TokenOut, responses={400: {"model": ErrorOut}, 401: {"model": ErrorOut}})
 def refresh(payload: RefreshRequest, session: Session = Depends(get_session)):
     login_session, credential = locked_refresh_session(session, payload.refresh_token)
     now = datetime.now(timezone.utc)
@@ -127,7 +134,7 @@ def refresh(payload: RefreshRequest, session: Session = Depends(get_session)):
     return {"access_token": access_token, "refresh_token": new_token, "token_type": "Bearer", "expires_in": expires_in}
 
 
-@app.post("/auth/logout", status_code=204)
+@app.post("/auth/logout", status_code=204, responses={400: {"model": ErrorOut}, 401: {"model": ErrorOut}})
 def logout(payload: RefreshRequest, session: Session = Depends(get_session)):
     login_session, credential = locked_refresh_session(session, payload.refresh_token)
     if credential.consumed or login_session.revoked or login_session.expires_at <= datetime.now(timezone.utc):
@@ -137,7 +144,7 @@ def logout(payload: RefreshRequest, session: Session = Depends(get_session)):
     return Response(status_code=204)
 
 
-@app.post("/auth/me/roles", response_model=RolesOut)
+@app.post("/auth/me/roles", response_model=RolesOut, responses={400: {"model": ErrorOut}, 401: {"model": ErrorOut}, 409: {"model": ErrorOut}})
 def request_role(payload: RoleRequest, account: Account = Depends(current_account), session: Session = Depends(get_session)):
     status = "activo" if payload.role == "cliente" else "pendiente"
     session.add(RoleAssignment(account_id=account.id, role=payload.role, status=status))
@@ -152,7 +159,7 @@ def request_role(payload: RoleRequest, account: Account = Depends(current_accoun
     return {"roles": [{"role": role.role, "status": role.status} for role in roles]}
 
 
-@app.get("/auth/me", response_model=AccountOut)
+@app.get("/auth/me", response_model=AccountOut, responses={401: {"model": ErrorOut}})
 def get_me(account: Account = Depends(current_account), session: Session = Depends(get_session)):
     roles = session.scalars(select(RoleAssignment).where(RoleAssignment.account_id == account.id).order_by(RoleAssignment.role)).all()
     return AccountOut(
@@ -162,7 +169,7 @@ def get_me(account: Account = Depends(current_account), session: Session = Depen
     )
 
 
-@app.patch("/admin/organizers/{account_id}/status", response_model=OrganizerStatusOut)
+@app.patch("/admin/organizers/{account_id}/status", response_model=OrganizerStatusOut, responses={400: {"model": ErrorOut}, 401: {"model": ErrorOut}, 403: {"model": ErrorOut}, 404: {"model": ErrorOut}})
 def set_organizer_status(account_id: UUID, payload: OrganizerStatus, account: Account = Depends(current_account), session: Session = Depends(get_session)):
     admin = session.scalar(select(RoleAssignment).where(RoleAssignment.account_id == account.id, RoleAssignment.role == "administrador", RoleAssignment.status == "activo"))
     if admin is None:
@@ -175,9 +182,28 @@ def set_organizer_status(account_id: UUID, payload: OrganizerStatus, account: Ac
     return {"account_id": str(account_id), "status": payload.status}
 
 
-@app.get("/internal/accounts/{account_id}/roles", response_model=AccountRolesOut, dependencies=[Depends(authorize_service)])
+@app.get("/internal/accounts/{account_id}/roles", response_model=AccountRolesOut, dependencies=[Depends(authorize_service)], responses={400: {"model": ErrorOut}, 401: {"model": ErrorOut}, 403: {"model": ErrorOut}, 404: {"model": ErrorOut}, 503: {"model": ErrorOut}})
 def get_account_roles(account_id: UUID, session: Session = Depends(get_session)):
     if session.get(Account, account_id) is None:
         raise HTTPException(status_code=404, detail="not_found")
     roles = session.scalars(select(RoleAssignment).where(RoleAssignment.account_id == account_id).order_by(RoleAssignment.role)).all()
     return {"account_id": str(account_id), "roles": [{"role": role.role, "status": role.status} for role in roles]}
+
+
+_default_openapi = app.openapi
+
+
+def openapi_with_actual_validation_errors():
+    schema = _default_openapi()
+    for path in schema["paths"].values():
+        for operation in path.values():
+            if not isinstance(operation, dict):
+                continue
+            responses = operation.get("responses", {})
+            validation = responses.get("422", {}).get("content", {}).get("application/json", {}).get("schema", {})
+            if validation.get("$ref") == "#/components/schemas/HTTPValidationError":
+                responses.pop("422")
+    return schema
+
+
+app.openapi = openapi_with_actual_validation_errors

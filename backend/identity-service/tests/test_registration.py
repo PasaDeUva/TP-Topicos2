@@ -71,16 +71,32 @@ def test_invalid_registration(client, changes):
     assert client.post("/auth/register", json=payload).status_code == 400
 
 
-def test_password_and_refresh_token_length_limits(client):
+def test_short_password_reports_minimum_without_exposing_password(client, capsys):
+    password = "short7!"
+    payload = {"email": f"{uuid.uuid4()}@example.com", "password": password, "role": "cliente"}
+    response = client.post("/auth/register", json=payload)
+    assert response.status_code == 400
+    assert response.json() == {"code": "invalid_request", "message": "Password must contain at least 8 characters"}
+    assert password not in response.text
+    assert password not in capsys.readouterr().out
+
+
+def test_password_minimum_is_accepted_and_other_errors_remain_generic(client):
+    payload = {"email": f"{uuid.uuid4()}@example.com", "password": "abcdefgh", "role": "cliente"}
+    assert client.post("/auth/register", json=payload).status_code == 201
+    payload["email"] = "invalid"
+    response = client.post("/auth/register", json=payload)
+    assert response.status_code == 400
+    assert response.json() == {"code": "invalid_request", "message": "Invalid request"}
+
+
+def test_long_password_and_refresh_token_are_not_rejected_by_length(client):
     email = f"{uuid.uuid4()}@example.com"
-    password = "a" * 1024
+    password = "a" * 1025
     assert client.post("/auth/register", json={"email": email, "password": password, "role": "cliente"}).status_code == 201
     assert client.post("/auth/login", json={"email": email, "password": password}).status_code == 200
-    too_long = "a" * 1025
-    assert client.post("/auth/register", json={"email": f"{uuid.uuid4()}@example.com", "password": too_long, "role": "cliente"}).status_code == 400
-    assert client.post("/auth/login", json={"email": email, "password": too_long}).status_code == 400
     for endpoint in ("/auth/refresh", "/auth/logout"):
-        assert client.post(endpoint, json={"refresh_token": "x" * 257}).status_code == 400
+        assert client.post(endpoint, json={"refresh_token": "x" * 257}).status_code == 401
 
 
 def test_openapi_documents_success_response_models(client):
@@ -95,6 +111,27 @@ def test_openapi_documents_success_response_models(client):
     for (path, method), model in expected.items():
         schema = paths[path][method]["responses"]["200"]["content"]["application/json"]["schema"]
         assert schema["$ref"] == f"#/components/schemas/{model}"
+
+
+def test_openapi_documents_actual_error_responses(client):
+    paths = client.get("/openapi.json").json()["paths"]
+    expected = {
+        ("/auth/register", "post"): {"400", "409", "500"},
+        ("/auth/login", "post"): {"400", "401", "500"},
+        ("/auth/refresh", "post"): {"400", "401", "500"},
+        ("/auth/logout", "post"): {"400", "401", "500"},
+        ("/auth/me", "get"): {"401", "500"},
+        ("/auth/me/roles", "post"): {"400", "401", "409", "500"},
+        ("/admin/organizers/{account_id}/status", "patch"): {"400", "401", "403", "404", "500"},
+        ("/internal/accounts/{account_id}/roles", "get"): {"400", "401", "403", "404", "500", "503"},
+    }
+    for (path, method), statuses in expected.items():
+        responses = paths[path][method]["responses"]
+        assert "422" not in responses
+        assert statuses <= responses.keys()
+        for status in statuses:
+            schema = responses[status]["content"]["application/json"]["schema"]
+            assert schema["$ref"] == "#/components/schemas/ErrorOut"
 
 
 def test_login_and_request_additional_role(client):

@@ -4,6 +4,8 @@
 
 Permitir que las personas accedan con una identidad única y que sus roles y habilitaciones puedan consultarse de forma confiable por la plataforma.
 
+Identity ofrece la verificación de credenciales y la consulta de roles actuales. Los escenarios que describen decisiones de autorización de otros servicios establecen obligaciones para sus futuras integraciones; no implican que Eventos o Compras ya estén conectados con Identity.
+
 ## ADDED Requirements
 
 ### Requirement: Registro de clientes

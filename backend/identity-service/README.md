@@ -25,7 +25,7 @@ docker compose exec identity-service python -m app.admin recover
 
 La recuperación revoca las sesiones de ese administrador y sus credenciales de renovación. Los JWT de acceso ya emitidos pueden seguir siendo válidos hasta su vencimiento.
 
-Las contraseñas nuevas admiten entre 8 y 1024 caracteres; login acepta hasta 1024. Las credenciales de renovación admiten hasta 256 caracteres. Esos límites de campos no sustituyen un límite de tamaño del cuerpo HTTP ni controles de tráfico en el despliegue.
+Las contraseñas nuevas deben tener al menos 8 caracteres.
 
 ## Pruebas
 
