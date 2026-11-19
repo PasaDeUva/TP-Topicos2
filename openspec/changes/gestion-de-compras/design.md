@@ -84,7 +84,7 @@ CREATE INDEX ix_compras_cliente_creado ON compras (cliente_id, creado_en DESC);
 
 ### 4. Cliente de Eventos
 
-`events_client.py` expone `EventsClient.obtener_evento(evento_id, correlation_id)` sobre `httpx.AsyncClient` con la URL base `EVENTS_SERVICE_URL` (en Compose, `http://events-service:8000`) y un timeout corto configurable. Reenvía `X-Correlation-Id`. Devuelve el evento, `None` ante `404`, o lanza una excepción propia que el router traduce a `503`.
+`events_client.py` expone `EventsClient.obtener_evento(evento_id, correlation_id)` sobre `httpx.AsyncClient` con la URL base `EVENTS_SERVICE_URL` (en Compose, `http://events-service:8000`) y un timeout estricto menor a 1 segundo (`events_timeout_seconds`, configurable). Reenvía `X-Correlation-Id`. Devuelve el evento, `None` ante `404`, o lanza una excepción propia que el router traduce a `503`.
 
 Se inyecta con `Depends(get_events_client)`. Los tests unitarios lo sustituyen con `app.dependency_overrides` por un cliente con `httpx.MockTransport`, sin agregar dependencias de test.
 
