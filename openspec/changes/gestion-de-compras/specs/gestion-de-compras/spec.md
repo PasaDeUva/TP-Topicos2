@@ -45,7 +45,7 @@ El sistema SHALL validar el evento y la modalidad consultando `GET /eventos/{id}
 - **THEN** el sistema responde con código 503 Service Unavailable y no registra la compra
 
 ### Requirement: Idempotencia del registro
-El sistema SHALL exigir la cabecera `Idempotency-Key` en `POST /compras` y SHALL tratar la clave como única por cliente. Repetir la solicitud con la misma clave y el mismo contenido MUST devolver la compra original sin crear otra.
+El sistema SHALL exigir la cabecera `Idempotency-Key` en `POST /compras`, con una longitud entre 1 y 255 caracteres, y SHALL tratar la clave como única por cliente. Repetir la solicitud con la misma clave y el mismo contenido MUST devolver la compra original sin crear otra.
 
 #### Scenario: Reintento con la misma clave y el mismo contenido
 - **GIVEN** una compra registrada con una clave de idempotencia determinada
@@ -57,9 +57,9 @@ El sistema SHALL exigir la cabecera `Idempotency-Key` en `POST /compras` y SHALL
 - **WHEN** se envía `POST /compras` con la misma clave y el mismo cliente, pero con otro evento o modalidad
 - **THEN** el sistema responde con código 409 Conflict y no crea una compra nueva
 
-#### Scenario: Clave ausente
-- **WHEN** se envía `POST /compras` sin la cabecera `Idempotency-Key` o con un valor vacío
-- **THEN** el sistema responde con código 400 Bad Request y cuerpo `{"detail": "invalid body"}`
+#### Scenario: Clave ausente o inválida
+- **WHEN** se envía `POST /compras` sin la cabecera `Idempotency-Key`, con un valor vacío o con más de 255 caracteres
+- **THEN** el sistema responde con código 400 Bad Request, cuerpo `{"detail": "invalid body"}` y no registra la compra
 
 #### Scenario: Solicitudes concurrentes con la misma clave
 - **WHEN** se reciben simultáneamente dos solicitudes idénticas con la misma clave de idempotencia
