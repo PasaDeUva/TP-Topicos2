@@ -1,6 +1,6 @@
 # ADR-0004: Autenticación entre servicios con JWT firmados
 
-- Estado: Propuesto
+- Estado: Aceptado
 - Fecha: 2026-11-13
 
 ## Contexto

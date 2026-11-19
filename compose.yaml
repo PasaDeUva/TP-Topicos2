@@ -34,7 +34,13 @@ services:
       context: ./backend
       dockerfile: Dockerfile.tests
     environment:
+      IDENTITY_TEST_DATABASE_URL: postgresql+psycopg://identity:identity@identity-dev-db:5432/identity_test
       TEST_DATABASE_URL: postgresql+psycopg://events:events@events-db:5432/events_test
+    depends_on:
+      identity-test-db-init:
+        condition: service_completed_successfully
+      events-db:
+        condition: service_healthy
 
   mock-app:
     build:
@@ -62,6 +68,71 @@ services:
       timeout: 5s
       retries: 10
 
+  identity-dev-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: identity_db
+      POSTGRES_USER: identity
+      POSTGRES_PASSWORD: identity
+    ports:
+      - "${IDENTITY_DB_HOST_PORT:-5435}:5432"
+    volumes:
+      - identity-dev-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U identity -d identity_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  identity-test-db-init:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: identity
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        set -eu;
+        if [ "$(psql -h identity-dev-db -U identity -d postgres -Atqc
+        "SELECT 1 FROM pg_database WHERE datname = 'identity_test'")" != "1" ]; then
+        createdb -h identity-dev-db -U identity identity_test;
+        fi
+    depends_on:
+      identity-dev-db:
+        condition: service_healthy
+
+  identity-service:
+    build:
+      context: ./backend/identity-service
+    environment:
+      IDENTITY_ENV: local
+      UVICORN_RELOAD: "true"
+      PYTHONDONTWRITEBYTECODE: "1"
+      WATCHFILES_FORCE_POLLING: ${IDENTITY_WATCHFILES_FORCE_POLLING:-true}
+      DATABASE_URL: postgresql+psycopg://identity:identity@identity-dev-db:5432/identity_db
+      JWT_PRIVATE_DIR: /keys/private
+      JWT_PUBLIC_DIR: /keys/public
+      JWT_ISSUER: ${IDENTITY_JWT_ISSUER:-identity-local}
+      JWT_AUDIENCE: ${IDENTITY_JWT_AUDIENCE:-platform-local}
+      ADMIN_EMAIL: ${IDENTITY_ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${IDENTITY_ADMIN_PASSWORD:-local-admin-password}
+      SERVICE_CREDENTIALS_JSON: ${IDENTITY_SERVICE_CREDENTIALS_JSON:-}
+      EVENTS_SERVICE_TOKEN: ${IDENTITY_EVENTS_SERVICE_TOKEN:-local-events-token}
+      PURCHASES_SERVICE_TOKEN: ${IDENTITY_PURCHASES_SERVICE_TOKEN:-local-purchases-token}
+    ports:
+      - "${IDENTITY_HOST_PORT:-8002}:8000"
+    volumes:
+      - ./backend/identity-service:/app
+      - identity-private-keys:/keys/private
+      - identity-public-keys:/keys/public
+    depends_on:
+      identity-dev-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   events-service:
     build:
       context: ./backend/events-service
@@ -79,3 +150,6 @@ services:
 volumes:
   postgres-data:
   events-db-data:
+  identity-dev-db-data:
+  identity-private-keys:
+  identity-public-keys:

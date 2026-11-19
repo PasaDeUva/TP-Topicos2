@@ -17,6 +17,7 @@ frontend/    # aplicaciones frontend, una carpeta por proyecto
 └── mock-app/ # aplicación React independiente de ejemplo
 backend/     # microservicios backend, una carpeta por servicio
 └── mock-service/ # servicio FastAPI independiente de ejemplo
+└── identity-service/ # cuentas, roles y sesiones
 ```
 
 ## Entorno local con Docker
@@ -39,6 +40,18 @@ Servicios disponibles:
 - Frontend: <http://localhost:5173>
 - Backend mock service: <http://localhost:8000/health>
 - PostgreSQL: `localhost:5432`
+- Identity API: <http://localhost:8002/docs>
+- PostgreSQL de Identity para desarrollo: `localhost:5435` (`identity_db`)
+
+Para levantar o reconstruir solo Identity y su base:
+
+```bash
+docker compose up -d --build --wait identity-service
+```
+
+Identity aplica sus migraciones al arrancar. Los datos y las claves locales se
+conservan en volúmenes de Docker. La interfaz web de ejemplo todavía no está
+integrada con Identity.
 
 Para validar los servicios:
 
@@ -53,13 +66,18 @@ docker compose run --rm mock-app npm run build
 El frontend consulta `/api/health`; Vite redirige esa ruta al servicio
 `mock-service` dentro de la red de Compose.
 
-Cada comando `docker compose run --rm <servicio> <comando>` ejecuta el comando
-únicamente dentro del servicio indicado. Para ejecutar los tests de otro
-microservicio, se reemplaza `<servicio>` por su nombre en `compose.yaml`.
-`backend-tests` es el runner de toda la carpeta `backend/` y ejecuta los tests
-de todos los microservicios que tengan una carpeta `tests/`.
+`backend-tests` es el runner de toda la carpeta `backend/`: inicia las instancias
+de Identity y Events, prepara la base de prueba de Identity y ejecuta los tests de
+los microservicios que tengan una carpeta `tests/`. Identity aplica sus
+migraciones al iniciar sus tests.
 Consultar la documentación específica en [`backend/README.md`](backend/README.md)
-y [`backend/mock-service/README.md`](backend/mock-service/README.md).
+y [`backend/identity-service/README.md`](backend/identity-service/README.md).
+
+Para detener el entorno conservando los datos y las claves:
+
+```bash
+docker compose down
+```
 
 ## Documentación
 
@@ -99,7 +117,7 @@ npm run lint
 **Docker Compose, desde la raíz del repositorio:**
 
 ```bash
-docker compose run --rm backend-tests python -m ruff check mock-service
+docker compose run --rm --no-deps backend-tests python -m ruff check mock-service identity-service
 docker compose run --rm mock-app npm run lint
 ```
 

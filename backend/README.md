@@ -8,6 +8,7 @@ tiene su propia subcarpeta, código, dependencias y tests.
 | Servicio | Carpeta | Compose |
 |---|---|---|
 | Mock service | [`mock-service/`](mock-service/) | `mock-service` |
+| Identity service | [`identity-service/`](identity-service/) | `identity-service` |
 | Events service | [`events-service/`](events-service/) | `events-service` |
 
 Los nombres de Compose son los que se usan en `docker compose run`. Los
@@ -22,16 +23,19 @@ docker compose run --rm mock-service pytest
 docker compose run --rm backend-tests sh -c "cd events-service && pytest"
 ```
 
-Para otro microservicio, se utiliza su nombre en Compose:
+Para Identity, el runner de backend prepara la base de pruebas y permite
+ejecutar solo su suite:
 
 ```bash
-docker compose run --rm otro-servicio pytest
+docker compose run --rm backend-tests sh -c 'cd identity-service && pytest'
 ```
 
 ## Ejecutar todos los tests del backend
 
-El servicio `backend-tests` busca cada subcarpeta de `backend/` que contenga
-`tests/` y ejecuta sus tests. Para correr la suite completa:
+El servicio `backend-tests` espera las instancias de Identity y Events, crea la
+base de prueba de Identity si falta y ejecuta los tests de cada subcarpeta que
+contenga `tests/`. Identity aplica sus migraciones al iniciar sus pruebas. Para
+correr la suite completa:
 
 ```bash
 docker compose run --rm backend-tests
@@ -41,6 +45,7 @@ Cada nuevo microservicio backend debe mantener sus tests dentro de su propia
 carpeta y declarar sus dependencias en `requirements.txt` (o `requirements-dev.txt`) para que el runner
 los incluya automáticamente.
 
-Los servicios están documentados en:
-- [`mock-service/README.md`](mock-service/README.md)
-- [`events-service/README.md`](events-service/README.md)
+Consultá las instrucciones específicas en
+[`mock-service/README.md`](mock-service/README.md),
+[`events-service/README.md`](events-service/README.md) e
+[`identity-service/README.md`](identity-service/README.md).

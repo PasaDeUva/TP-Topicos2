@@ -38,8 +38,14 @@ jobs:
       - name: Build application images
         run: docker compose build
 
-      - name: Start test database
-        run: docker compose up -d events-db --wait
+      - name: Start test databases
+        run: docker compose up -d --wait identity-dev-db events-db
+
+      - name: Create Identity test database
+        run: docker compose run --rm --no-deps identity-test-db-init
+
+      - name: Migrate Identity test database
+        run: docker compose run --rm --no-deps backend-tests sh -c 'cd identity-service && DATABASE_URL="$IDENTITY_TEST_DATABASE_URL" alembic upgrade head && DATABASE_URL="$IDENTITY_TEST_DATABASE_URL" alembic check'
 
       - name: Migrate events database
         run: docker compose run --rm events-service alembic upgrade head
@@ -48,10 +54,13 @@ jobs:
         run: docker compose run --rm events-service alembic check
 
       - name: Lint backend
-        run: docker compose run --rm --no-deps backend-tests python -m ruff check mock-service events-service
+        run: docker compose run --rm --no-deps backend-tests python -m ruff check mock-service events-service identity-service
 
       - name: Test backend
         run: docker compose run --rm --no-deps backend-tests
+
+      - name: Test Identity Compose integration
+        run: python backend/identity-service/scripts/verify_compose.py
 
       - name: Lint frontend
         run: docker compose run --rm --no-deps mock-app npm run lint
