@@ -98,6 +98,16 @@ Se inyecta con `Depends(get_events_client)`. Los tests unitarios lo sustituyen c
 
 El handler de `RequestValidationError` replica el de Eventos: `400` con `{"detail": "invalid path parameter"}` para errores de path y `{"detail": "invalid body"}` para el resto, incluidos query y cabecera.
 
+Las respuestas de error de negocio usan el mismo formato `{"detail": "<causa>"}`, con estas causas:
+
+| Estatus | `detail` | Cuándo |
+|---|---|---|
+| 404 | `not found` | El evento no existe en Eventos, la modalidad no está en el evento, o la compra no existe |
+| 409 | `idempotency conflict` | La clave ya se usó con otro `evento_id` o `modalidad_id` |
+| 409 | `evento inactivo` | Se eligió una modalidad con `activo` falso |
+| 409 | `modalidad no disponible` | La modalidad no es de tipo `general` |
+| 503 | `events service unavailable` | Error de red, timeout o `5xx` al consultar Eventos |
+
 ### 6. Infraestructura
 
 - `compose.yaml`: `compras-db` (PostgreSQL 16, puerto `5436:5432`, volumen propio, script de init con `compras_test`) y `compras-service` (puerto `8003:8000`, `EVENTS_SERVICE_URL`, `depends_on` de `compras-db` saludable y de `events-service`).
