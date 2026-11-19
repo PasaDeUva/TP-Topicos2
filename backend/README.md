@@ -10,6 +10,7 @@ tiene su propia subcarpeta, código, dependencias y tests.
 | Mock service | [`mock-service/`](mock-service/) | `mock-service` |
 | Identity service | [`identity-service/`](identity-service/) | `identity-service` |
 | Events service | [`events-service/`](events-service/) | `events-service` |
+| Compras service | [`compras-service/`](compras-service/) | `compras-service` |
 
 Los nombres de Compose son los que se usan en `docker compose run`. Los
 comandos son los mismos en Windows, macOS y Linux.
@@ -47,5 +48,6 @@ los incluya automáticamente.
 
 Consultá las instrucciones específicas en
 [`mock-service/README.md`](mock-service/README.md),
-[`events-service/README.md`](events-service/README.md) e
+[`events-service/README.md`](events-service/README.md),
+[`compras-service/README.md`](compras-service/README.md),
 [`identity-service/README.md`](identity-service/README.md).

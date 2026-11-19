@@ -39,7 +39,7 @@ jobs:
         run: docker compose build
 
       - name: Start test databases
-        run: docker compose up -d --wait identity-dev-db events-db
+        run: docker compose up -d --wait identity-dev-db events-db compras-db
 
       - name: Create Identity test database
         run: docker compose run --rm --no-deps identity-test-db-init
@@ -53,8 +53,14 @@ jobs:
       - name: Check database migration drift
         run: docker compose run --rm events-service alembic check
 
+      - name: Migrate compras database
+        run: docker compose run --rm compras-service alembic upgrade head
+
+      - name: Check compras database migration drift
+        run: docker compose run --rm compras-service alembic check
+
       - name: Lint backend
-        run: docker compose run --rm --no-deps backend-tests python -m ruff check mock-service events-service identity-service
+        run: docker compose run --rm --no-deps backend-tests python -m ruff check mock-service events-service identity-service compras-service
 
       - name: Test backend
         run: docker compose run --rm --no-deps backend-tests

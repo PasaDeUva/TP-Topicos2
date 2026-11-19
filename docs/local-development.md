@@ -38,7 +38,8 @@ mezclar dependencias de servicios distintos.
 
 ## Servicios backend (Python)
 
-Repetir para cada servicio dentro de `backend/`. El ejemplo usa `mock-service`.
+Repetir para cada servicio dentro de `backend/` (`mock-service`, `events-service`,
+`compras-service`, `identity-service`). El ejemplo usa `mock-service`.
 `--prompt .` hace que la terminal muestre el nombre del servicio (`(mock-service)`)
 en lugar de `(.venv)`, y `--clear` recrea el venv si ya existía.
 
