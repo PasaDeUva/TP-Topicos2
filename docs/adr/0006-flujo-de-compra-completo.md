@@ -240,7 +240,7 @@ sequenceDiagram
 - **Límite X por compra:** valor, alcance (por compra, por cliente o por evento) y a qué servicio pertenece su validación.
 - **Estados de la compra:** nombres y transiciones (por ejemplo, `pendiente`, `reservada`, `pagada`, `confirmada`, `cancelada`). Se definen en el design de `compras-service`.
 - **Contrato de pago:** campos de `payment-service` y cómo informa el resultado (llamada síncrona o evento asíncrono). Se decide en el change de pagos.
-- **Modo de comunicación:** las llamadas del flujo son síncronas en el diseño inicial. Migrar la confirmación del pago a un evento asíncrono queda para la Etapa III.
+- **Modo de comunicación:** las llamadas del flujo son síncronas en la Etapa I. Migrar el flujo a comunicación asíncrona (Transactional Outbox y eventos, incluida la confirmación del pago) queda para la Etapa III.
 - **Devoluciones:** cómo se revierte una compra confirmada. Pertenece a la Etapa III.
 
 ## Consecuencias
@@ -256,6 +256,7 @@ sequenceDiagram
 - El flujo tiene más pasos y más puntos de fallo parcial que el registro actual.
 - La compensación debe ser idempotente y tolerar que el propio `events-service` no responda.
 - Sin TTL definido, una reserva puede quedar bloqueada si el cliente abandona el pago.
+- La orquestación síncrona encadena tres llamadas HTTP (`CS -> ES` reserva, `CS -> PS` pago, `CS -> ES` confirmación) en el camino crítico. Es la base funcional de la Etapa I. La transición a un esquema asíncrono con Transactional Outbox y eventos queda planificada para la Etapa III (resiliencia y escalabilidad).
 
 ## Alternativas consideradas
 
