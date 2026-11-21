@@ -6,6 +6,19 @@ import AccountView from "../src/AccountView";
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("account roles", () => {
+  it("shows progress while requesting a role and the resulting status", async () => {
+    let finish!: (value: object) => void;
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ account_id: "123", email: "user@example.com", roles: [{ role: "cliente", status: "activo" }] }) })
+      .mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; })));
+    const user = userEvent.setup();
+    render(<AccountView token="token" onInvalidSession={vi.fn()} />);
+    await user.click(await screen.findByRole("button", { name: "Solicitar rol organizador" }));
+    expect(screen.getByRole("status").textContent).toContain("Solicitando rol");
+    expect(screen.getByRole("button", { name: "Solicitar rol organizador" }).hasAttribute("disabled")).toBe(true);
+    await act(async () => { finish({ ok: true, json: async () => ({ roles: [{ role: "cliente", status: "activo" }, { role: "organizador", status: "pendiente" }] }) }); });
+    expect(await screen.findByText("organizador: pendiente")).toBeTruthy();
+  });
   it.each(["pendiente", "deshabilitado"])("shows organizer %s independently of the client role", async (status) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ account_id: "123", email: "user@example.com", roles: [{ role: "cliente", status: "activo" }, { role: "organizador", status }] }) }));
     render(<AccountView token="token" onInvalidSession={vi.fn()} />);

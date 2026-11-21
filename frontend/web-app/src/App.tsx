@@ -118,20 +118,25 @@ export default function App() {
   }
 
   return (
-    <main>
-      <h1>Acceso y cuenta</h1>
-      {restoring ? <p role="status">Restaurando sesión...</p> : session ? <><AccountView token={session.access_token} onInvalidSession={invalidateSession} /><button type="button" disabled={busy} onClick={() => void signOut()}>Cerrar sesión</button></> : <>
-        <h2>{mode === "login" ? "Iniciar sesión" : "Crear cuenta"}</h2>
-        {message && <p role="status">{message}</p>}
-        {error && <p role="alert">{error}</p>}
-        <form onSubmit={submit} noValidate>
-          <label>Email <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></label>
-          <label>Contraseña <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} required /></label>
-          {mode === "register" && <label>Tipo de cuenta <select value={role} onChange={(event) => setRole(event.target.value as Role)}><option value="cliente">Cliente</option><option value="organizador">Organizador</option></select></label>}
-          <button type="submit" disabled={busy}>{busy ? "Procesando..." : mode === "login" ? "Ingresar" : "Registrarse"}</button>
-        </form>
-        <button type="button" disabled={busy} onClick={() => changeMode(mode === "login" ? "register" : "login")}>{mode === "login" ? "Crear cuenta" : "Volver al inicio de sesión"}</button>
-      </>}
+    <main className="app-shell">
+      <header className="app-header"><div className="brand"><span className="brand-mark" aria-hidden="true">T</span><span>TP Tópicos</span></div><span className="header-label">Acceso y cuenta</span></header>
+      <div className="page-layout">
+        <aside className="intro"><span className="intro-line" aria-hidden="true" /><h1>{session ? "Tu cuenta, en un solo lugar." : "Tu cuenta empieza acá."}</h1><p>{session ? "Consultá tus datos y administrá los roles asociados a tu cuenta." : "Ingresá para consultar tu cuenta y administrar tus roles."}</p><div className="intro-note"><strong>Acceso y cuenta</strong><span>Tu información y permisos disponibles, cuando los necesites.</span></div></aside>
+        <section className="panel" aria-label="Acceso y cuenta">
+          {restoring ? <div className="state" role="status">Restaurando sesión...</div> : session ? <><AccountView token={session.access_token} onInvalidSession={invalidateSession} /><div className="panel-footer"><button className="button button-secondary" type="button" disabled={busy} onClick={() => void signOut()}>Cerrar sesión</button></div></> : <>
+            <div className="panel-heading"><h2>{mode === "login" ? "Iniciar sesión" : "Crear cuenta"}</h2><p>{mode === "login" ? "Ingresá tus datos para continuar." : "Completá tus datos para comenzar."}</p></div>
+            {message && <p className="notice notice-success" role="status">{message}</p>}
+            {error && <p className="notice notice-error" role="alert">{error}</p>}
+            <form className="form" onSubmit={submit} noValidate>
+              <label className="field">Email <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></label>
+              <div className="field"><label htmlFor="password">Contraseña</label><input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} aria-describedby={mode === "register" ? "password-hint" : undefined} required />{mode === "register" && <span id="password-hint" className="field-hint">Al menos 8 caracteres.</span>}</div>
+              {mode === "register" && <label className="field">Tipo de cuenta <select value={role} onChange={(event) => setRole(event.target.value as Role)}><option value="cliente">Cliente</option><option value="organizador">Organizador</option></select></label>}
+              <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Procesando..." : mode === "login" ? "Ingresar" : "Registrarse"}</button>
+            </form>
+            <div className="panel-footer"><span>{mode === "login" ? "¿Todavía no tenés cuenta?" : "¿Ya tenés cuenta?"}</span><button className="button-link" type="button" disabled={busy} onClick={() => changeMode(mode === "login" ? "register" : "login")}>{mode === "login" ? "Crear cuenta" : "Volver al inicio de sesión"}</button></div>
+          </>}
+        </section>
+      </div>
     </main>
   );
 }

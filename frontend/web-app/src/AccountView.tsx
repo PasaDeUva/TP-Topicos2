@@ -64,17 +64,20 @@ export default function AccountView({ token, onInvalidSession }: Props) {
   }
 
   return <section>
-    <h2>Mi cuenta</h2>
-    {error && <p role="alert">{error}</p>}
-    {!account && !error && <p role="status">Cargando cuenta...</p>}
+    <div className="panel-heading"><h2>Mi cuenta</h2><p>Consultá los datos y roles asociados a tu cuenta.</p></div>
+    {error && <p className="notice notice-error" role="alert">{error}</p>}
+    {!account && !error && <p className="state" role="status">Cargando cuenta...</p>}
     {account && <>
-      <p>Email: {account.email}</p>
-      <p>Identificador: {account.account_id}</p>
-      <h3>Roles</h3>
-      <ul>{account.roles.map((item) => <li key={item.role}>{item.role}: {item.status}</li>)}</ul>
+      <div className="account-details"><p>Email: {account.email}</p><p>Identificador: {account.account_id}</p></div>
+      <div className="section-heading"><h3>Roles</h3><p>Permisos asociados a tu cuenta.</p></div>
+      {account.roles.length === 0 ? <p className="empty-state">No hay roles asociados a tu cuenta.</p> : <ul className="role-list">{account.roles.map((item) => <li key={item.role}><span className="badge">{item.role}: {item.status}</span></li>)}</ul>}
+      {!account.roles.some((item) => item.role === "organizador") && <p className="role-hint">El rol de organizador requiere habilitación después de solicitarlo.</p>}
+      {busy && <p className="role-progress" role="status">Solicitando rol...</p>}
+      <div className="role-actions">
       {(["cliente", "organizador"] as const).filter((role) => !account.roles.some((item) => item.role === role)).map((role) =>
-        <button key={role} disabled={busy} onClick={() => void addRole(role)}>Solicitar rol {role}</button>,
+        <button className="button button-secondary" key={role} disabled={busy} onClick={() => void addRole(role)}>Solicitar rol {role}</button>,
       )}
+      </div>
     </>}
   </section>;
 }
