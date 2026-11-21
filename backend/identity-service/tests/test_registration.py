@@ -10,14 +10,14 @@ import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
-from fastapi import HTTPException
+from fastapi import HTTPException, Request, Response
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import Session
 
 from app.database import get_session
 from app.accounts import create_account
 from app.admin import initialize_admin, recover_admin
-from app.main import app, login, refresh
+from app.main import app, csrf_for_session, login, refresh, web_refresh
 from app.models import Account, RefreshCredential, RoleAssignment, Session as LoginSession
 from app.schemas import Login, RefreshRequest
 
@@ -134,6 +134,26 @@ def test_openapi_documents_actual_error_responses(client):
             assert schema["$ref"] == "#/components/schemas/ErrorOut"
 
 
+def test_openapi_documents_web_session_contract(client):
+    paths = client.get("/openapi.json").json()["paths"]
+    for path, method, status, required in [
+        ("/auth/web/login", "post", "200", {("header", "Origin")}),
+        ("/auth/web/csrf", "get", "200", {("cookie", "identity_refresh")}),
+        ("/auth/web/refresh", "post", "200", {("header", "Origin"), ("header", "X-CSRF-Token"), ("cookie", "identity_refresh")}),
+        ("/auth/web/logout", "post", "204", {("header", "Origin"), ("header", "X-CSRF-Token"), ("cookie", "identity_refresh")}),
+    ]:
+        operation = paths[path][method]
+        parameters = {(item["in"], item["name"]) for item in operation["parameters"] if item["required"]}
+        assert parameters == required
+        headers = operation["responses"][status]["headers"]
+        assert "Cache-Control" in headers
+        assert ("Set-Cookie" in headers) == (path != "/auth/web/csrf")
+        for error in ("401", "403", "503"):
+            schema = operation["responses"][error]["content"]["application/json"]["schema"]
+            assert schema["$ref"] == "#/components/schemas/ErrorOut"
+        assert "422" not in operation["responses"]
+
+
 def test_login_and_request_additional_role(client):
     payload = {"email": f"{uuid.uuid4()}@example.com", "password": "password123", "role": "cliente"}
     registration = client.post("/auth/register", json=payload)
@@ -158,6 +178,184 @@ def test_invalid_login_and_token(client):
     assert client.post("/auth/login", json={"email": payload["email"], "password": "wrong"}).status_code == 401
     assert client.post("/auth/me/roles", json={"role": "cliente"}).status_code == 401
     assert client.post("/auth/me/roles", headers={"Authorization": "Bearer invalid"}, json={"role": "cliente"}).status_code == 401
+
+
+def test_web_login_checks_configuration_origin_and_cookie(client, monkeypatch):
+    payload = {"email": f"{uuid.uuid4()}@example.com", "password": "password123", "role": "cliente"}
+    assert client.post("/auth/register", json=payload).status_code == 201
+    credentials = {"email": payload["email"], "password": payload["password"]}
+    monkeypatch.setenv("IDENTITY_ENV", "production")
+    monkeypatch.setenv("IDENTITY_WEB_ORIGINS", "https://app.example.com")
+    monkeypatch.delenv("IDENTITY_WEB_ALLOW_LOCAL_HTTP", raising=False)
+    monkeypatch.delenv("IDENTITY_WEB_CSRF_SECRET", raising=False)
+    headers = {"Origin": "https://app.example.com"}
+    assert client.post("/auth/web/login", headers=headers, json=credentials).status_code == 503
+    monkeypatch.setenv("IDENTITY_WEB_CSRF_SECRET", "x" * 32)
+    monkeypatch.setenv("IDENTITY_WEB_ORIGINS", "https://app.example.com,https://app.example.com:8443")
+    assert client.post("/auth/web/login", headers=headers, json=credentials).status_code == 503
+    monkeypatch.setenv("IDENTITY_WEB_ORIGINS", "https://app.example.com")
+    assert client.post("/auth/web/login", headers={"Origin": "https://app.example.com:8443"}, json=credentials).status_code == 403
+    assert client.post("/auth/web/login", headers={"Origin": "https://evil.example.com"}, json=credentials).status_code == 403
+    assert client.post("/auth/web/login", headers=headers, json={**credentials, "password": "wrong"}).status_code == 401
+    response = client.post("/auth/web/login", headers=headers, json=credentials)
+    assert response.status_code == 200
+    assert set(response.json()) == {"access_token", "token_type", "expires_in", "csrf_token"}
+    cookie = response.headers["set-cookie"]
+    assert "HttpOnly" in cookie and "Secure" in cookie and "SameSite=strict" in cookie
+    assert "Path=/auth/web" in cookie and "Domain=" not in cookie
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["access-control-allow-origin"] == headers["Origin"]
+    assert response.headers["access-control-allow-credentials"] == "true"
+
+
+def test_web_cors_only_allows_configured_origins(client, monkeypatch):
+    monkeypatch.setenv("IDENTITY_ENV", "production")
+    monkeypatch.setenv("IDENTITY_WEB_ORIGINS", "https://app.example.com")
+    monkeypatch.setenv("IDENTITY_WEB_CSRF_SECRET", "x" * 32)
+    monkeypatch.delenv("IDENTITY_WEB_ALLOW_LOCAL_HTTP", raising=False)
+    headers = {
+        "Origin": "https://app.example.com",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type,x-csrf-token",
+    }
+    response = client.options("/auth/web/login", headers=headers)
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == headers["Origin"]
+    assert response.headers["access-control-allow-credentials"] == "true"
+    headers["Origin"] = "https://evil.example.com"
+    response = client.options("/auth/web/login", headers=headers)
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
+    monkeypatch.delenv("IDENTITY_WEB_CSRF_SECRET")
+    headers["Origin"] = "https://app.example.com"
+    assert client.options("/auth/web/login", headers=headers).status_code == 400
+
+
+def test_web_csrf_restores_without_rotation_and_rejects_invalid_session(client, monkeypatch):
+    monkeypatch.setenv("IDENTITY_ENV", "production")
+    monkeypatch.setenv("IDENTITY_WEB_ORIGINS", "https://app.example.com")
+    monkeypatch.setenv("IDENTITY_WEB_CSRF_SECRET", "x" * 32)
+    monkeypatch.delenv("IDENTITY_WEB_ALLOW_LOCAL_HTTP", raising=False)
+    payload = {"email": f"{uuid.uuid4()}@example.com", "password": "password123", "role": "cliente"}
+    assert client.post("/auth/register", json=payload).status_code == 201
+    login_response = client.post("/auth/web/login", headers={"Origin": "https://app.example.com"}, json=payload)
+    cookie = login_response.headers["set-cookie"].split(";", 1)[0]
+    headers = {"Cookie": cookie}
+    first = client.get("/auth/web/csrf", headers=headers)
+    second = client.get("/auth/web/csrf", headers={**headers, "Origin": "https://app.example.com"})
+    assert first.status_code == second.status_code == 200
+    assert first.json() == second.json() == {"csrf_token": login_response.json()["csrf_token"]}
+    assert first.headers["cache-control"] == "no-store" and "set-cookie" not in first.headers
+    rejected = client.get("/auth/web/csrf", headers={**headers, "Origin": "https://evil.example.com"})
+    assert rejected.status_code == 403 and "access-control-allow-origin" not in rejected.headers
+    assert client.get("/auth/web/csrf", headers={"Cookie": "identity_refresh=invalid"}).status_code == 401
+    db = app.dependency_overrides[get_session]()
+    account = db.scalar(select(Account).where(Account.email == payload["email"]))
+    stored = db.scalar(select(LoginSession).where(LoginSession.account_id == account.id))
+    stored.revoked = True
+    db.commit()
+    revoked = client.get("/auth/web/csrf", headers=headers)
+    assert revoked.status_code == 401 and revoked.headers["cache-control"] == "no-store"
+
+
+def test_web_refresh_rejects_invalid_protection_and_replay(client, monkeypatch):
+    monkeypatch.setenv("IDENTITY_ENV", "production")
+    monkeypatch.setenv("IDENTITY_WEB_ORIGINS", "https://app.example.com")
+    monkeypatch.setenv("IDENTITY_WEB_CSRF_SECRET", "x" * 32)
+    monkeypatch.delenv("IDENTITY_WEB_ALLOW_LOCAL_HTTP", raising=False)
+    payload = {"email": f"{uuid.uuid4()}@example.com", "password": "password123", "role": "cliente"}
+    account_id = client.post("/auth/register", json=payload).json()["account_id"]
+    login_response = client.post("/auth/web/login", headers={"Origin": "https://app.example.com"}, json=payload)
+    old_cookie = login_response.headers["set-cookie"].split(";", 1)[0]
+    headers = {"Origin": "https://app.example.com", "Cookie": old_cookie, "X-CSRF-Token": login_response.json()["csrf_token"]}
+    assert client.post("/auth/web/refresh", headers={**headers, "Origin": "https://evil.example.com"}).status_code == 403
+    assert client.post("/auth/web/refresh", headers={**headers, "X-CSRF-Token": "invalid"}).status_code == 403
+    db = app.dependency_overrides[get_session]()
+    stored = db.scalar(select(LoginSession).where(LoginSession.account_id == uuid.UUID(account_id)))
+    expiry = datetime.now(timezone.utc) + timedelta(minutes=30)
+    stored.started_at = expiry - timedelta(hours=24)
+    stored.expires_at = expiry
+    db.commit()
+    response = client.post("/auth/web/refresh", headers=headers)
+    assert response.status_code == 200
+    assert set(response.json()) == {"access_token", "expires_in", "token_type"}
+    claims = jwt.decode(response.json()["access_token"], os.environ["JWT_PUBLIC_KEY"], algorithms=["RS256"], issuer="identity-test", audience="services-test")
+    assert claims["exp"] <= int(expiry.timestamp())
+    assert response.headers["cache-control"] == "no-store"
+    new_cookie = response.headers["set-cookie"].split(";", 1)[0]
+    assert new_cookie != old_cookie
+    assert client.post("/auth/web/refresh", headers=headers).status_code == 401
+    assert client.post("/auth/web/refresh", headers={**headers, "Cookie": new_cookie}).status_code == 401
+
+
+def test_web_logout_requires_protection_and_revokes_session(client, monkeypatch):
+    monkeypatch.setenv("IDENTITY_ENV", "production")
+    monkeypatch.setenv("IDENTITY_WEB_ORIGINS", "https://app.example.com")
+    monkeypatch.setenv("IDENTITY_WEB_CSRF_SECRET", "x" * 32)
+    monkeypatch.delenv("IDENTITY_WEB_ALLOW_LOCAL_HTTP", raising=False)
+    payload = {"email": f"{uuid.uuid4()}@example.com", "password": "password123", "role": "cliente"}
+    assert client.post("/auth/register", json=payload).status_code == 201
+    logged_in = client.post("/auth/web/login", headers={"Origin": "https://app.example.com"}, json=payload)
+    cookie = logged_in.headers["set-cookie"].split(";", 1)[0]
+    headers = {"Origin": "https://app.example.com", "Cookie": cookie, "X-CSRF-Token": logged_in.json()["csrf_token"]}
+    bad_origin = client.post("/auth/web/logout", headers={**headers, "Origin": "https://evil.example.com"})
+    assert bad_origin.status_code == 403 and "set-cookie" not in bad_origin.headers
+    bad_csrf = client.post("/auth/web/logout", headers={**headers, "X-CSRF-Token": "invalid"})
+    assert bad_csrf.status_code == 403 and "set-cookie" not in bad_csrf.headers
+    assert client.get("/auth/web/csrf", headers={"Cookie": cookie}).status_code == 200
+    logout_response = client.post("/auth/web/logout", headers=headers)
+    assert logout_response.status_code == 204 and logout_response.content == b""
+    deleted_cookie = logout_response.headers["set-cookie"]
+    assert "Max-Age=0" in deleted_cookie and "Path=/auth/web" in deleted_cookie
+    assert "HttpOnly" in deleted_cookie and "Secure" in deleted_cookie and "SameSite=strict" in deleted_cookie
+    assert "Domain=" not in deleted_cookie
+    assert logout_response.headers["cache-control"] == "no-store"
+    assert client.post("/auth/web/refresh", headers=headers).status_code == 401
+
+
+def test_concurrent_web_refresh_revokes_session(client, monkeypatch):
+    monkeypatch.setenv("IDENTITY_ENV", "production")
+    monkeypatch.setenv("IDENTITY_WEB_ORIGINS", "https://app.example.com")
+    monkeypatch.setenv("IDENTITY_WEB_CSRF_SECRET", "x" * 32)
+    monkeypatch.delenv("IDENTITY_WEB_ALLOW_LOCAL_HTTP", raising=False)
+    engine = create_engine(os.environ["IDENTITY_TEST_DATABASE_URL"])
+    email = f"{uuid.uuid4()}@example.com"
+    with Session(engine) as db:
+        account = create_account(db, email, "password123")
+        account_id = account.id
+        db.add(RoleAssignment(account_id=account_id, role="cliente", status="activo"))
+        db.commit()
+        token = login(Login(email=email, password="password123"), db)["refresh_token"]
+        stored = db.scalar(select(LoginSession).where(LoginSession.account_id == account_id))
+        csrf = csrf_for_session(b"x" * 32, stored.id)
+    barrier = Barrier(2)
+
+    def attempt():
+        headers = [(b"origin", b"https://app.example.com"), (b"cookie", f"identity_refresh={token}".encode()), (b"x-csrf-token", csrf.encode())]
+        request = Request({"type": "http", "method": "POST", "path": "/auth/web/refresh", "headers": headers})
+        with Session(engine) as db:
+            barrier.wait(timeout=10)
+            try:
+                web_refresh(request, Response(), db)
+                return True
+            except HTTPException as exc:
+                assert exc.status_code == 401
+                return False
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            assert sorted(executor.map(lambda _: attempt(), range(2))) == [False, True]
+        with Session(engine) as db:
+            assert db.scalar(select(LoginSession).where(LoginSession.account_id == account_id)).revoked
+    finally:
+        with Session(engine) as db:
+            ids = select(LoginSession.id).where(LoginSession.account_id == account_id)
+            db.execute(delete(RefreshCredential).where(RefreshCredential.session_id.in_(ids)))
+            db.execute(delete(LoginSession).where(LoginSession.account_id == account_id))
+            db.execute(delete(RoleAssignment).where(RoleAssignment.account_id == account_id))
+            db.execute(delete(Account).where(Account.id == account_id))
+            db.commit()
+        engine.dispose()
 
 
 @pytest.mark.parametrize("invalid_claim", ["signature", "issuer", "audience", "expired"])
