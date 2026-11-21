@@ -47,6 +47,23 @@ class TokenOut(BaseModel):
     expires_in: int
 
 
+class WebLoginOut(BaseModel):
+    access_token: str
+    token_type: Literal["Bearer"]
+    expires_in: int
+    csrf_token: str
+
+
+class CsrfOut(BaseModel):
+    csrf_token: str
+
+
+class WebTokenOut(BaseModel):
+    access_token: str
+    token_type: Literal["Bearer"]
+    expires_in: int
+
+
 class RolesOut(BaseModel):
     roles: list[RoleOut]
 

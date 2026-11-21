@@ -27,6 +27,12 @@ La recuperación revoca las sesiones de ese administrador y sus credenciales de 
 
 Las contraseñas nuevas deben tener al menos 8 caracteres.
 
+## Sesión web
+
+Identity ofrece `POST /auth/web/login`, `GET /auth/web/csrf`, `POST /auth/web/refresh` y `POST /auth/web/logout`. La credencial de renovación se entrega en una cookie HttpOnly; la renovación y el cierre requieren el origen permitido y el token CSRF. Los endpoints JSON existentes conservan su contrato. El diseño se documenta en [ADR-0009](../../docs/adr/0009-sesion-web-identity.md).
+
+Para habilitar estas rutas, configurar un único origen de frontend en `IDENTITY_WEB_ORIGINS` y un secreto estable y aleatorio de al menos 32 bytes en `IDENTITY_WEB_CSRF_SECRET`. Fuera de desarrollo local se requiere HTTPS. Compose permite habilitar la excepción HTTP local mediante `IDENTITY_WEB_ALLOW_LOCAL_HTTP=true`; con `false` la cookie usa `Secure`. Si la configuración web está incompleta, las rutas web devuelven `503` y los endpoints JSON permanecen disponibles.
+
 ## Pruebas
 
 ```sh
