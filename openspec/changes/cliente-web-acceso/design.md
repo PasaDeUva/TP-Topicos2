@@ -28,7 +28,7 @@ La aplicación ofrece registro de cliente u organizador, inicio, cuenta y solici
 
 ### Contrato de sesión web
 
-Aplicar [ADR-0009](../../../docs/adr/0009-sesion-web-identity.md), propuesto, y los requisitos web diferidos en `gestion-de-accesos/design.md`. Añadir una interfaz web separada bajo `/auth/web/`, conservando los endpoints JSON actuales:
+Aplicar [ADR-0009](../../../docs/adr/0009-sesion-web-identity.md), aceptado, y los requisitos web diferidos en `gestion-de-accesos/design.md`. Añadir una interfaz web separada bajo `/auth/web/`, conservando los endpoints JSON actuales:
 
 | Operación | Entrada | Resultado |
 | --- | --- | --- |

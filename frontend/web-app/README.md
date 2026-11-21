@@ -21,6 +21,17 @@ Abrir `http://localhost:15174`. Conservar el mismo secreto al reiniciar los serv
 
 La cookie de renovación es HttpOnly y el JWT se mantiene en memoria. La coordinación entre pestañas requiere Web Locks, BroadcastChannel, almacenamiento local y un contexto seguro: HTTPS o localhost. Si la sesión vence, se revoca o una renovación queda con resultado desconocido, iniciar sesión nuevamente. Si el navegador no ofrece coordinación segura, la aplicación no inicia ni renueva la sesión.
 
+### Vite ejecutado en el host
+
+Si Identity está disponible en el host en el puerto local predeterminado `8002`, se puede ejecutar Vite fuera de Compose usando su proxy del mismo origen:
+
+```powershell
+$env:IDENTITY_PROXY_TARGET = 'http://localhost:8002'
+npm --prefix frontend/web-app run dev
+```
+
+`IDENTITY_PROXY_TARGET` configura el destino del proxy de Vite para `/auth` y `/admin`; sin la variable se usa `http://identity-service:8000`, adecuado dentro de Compose. Se lee del entorno del proceso al iniciar Vite, no se expone al navegador y no cambia `VITE_IDENTITY_ORIGIN`. Para la sesión web, Identity debe permitir el origen efectivo del frontend.
+
 ### Identity en otro origen del mismo sitio
 
 El proxy del mismo origen es el comportamiento predeterminado. Para conectar el navegador directamente a Identity, configurar `VITE_IDENTITY_ORIGIN` con su origen completo, por ejemplo `https://identity.example.com`, y configurar en Identity `IDENTITY_WEB_ORIGINS` con el origen único del frontend, por ejemplo `https://app.example.com`. Fuera de localhost se requiere HTTPS. La cookie `SameSite=Strict` limita esta configuración a orígenes del mismo sitio; para sitios distintos se requiere revisar el diseño. La variable `VITE_IDENTITY_ORIGIN` es pública y se incorpora al ejecutar Vite o al construir los archivos de producción; no debe contener secretos.

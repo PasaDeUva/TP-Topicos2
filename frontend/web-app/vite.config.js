@@ -1,6 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+const identityProxyTarget = process.env.IDENTITY_PROXY_TARGET || "http://identity-service:8000";
+
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -8,6 +10,6 @@ export default defineConfig({
     port: 5174,
     strictPort: true,
     cors: false,
-    proxy: { "/auth": { target: "http://identity-service:8000" }, "/admin": { target: "http://identity-service:8000" } },
+    proxy: { "/auth": { target: identityProxyTarget }, "/admin": { target: identityProxyTarget } },
   },
 });
