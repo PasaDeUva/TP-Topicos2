@@ -14,7 +14,10 @@ app.include_router(router)
 
 @app.middleware("http")
 async def bitacora(request: Request, call_next):
-    correlation_id = request.headers.get("X-Correlation-Id", str(uuid.uuid4()))
+    correlation_id = (
+        request.headers.get("X-Correlation-Id") or str(uuid.uuid4())
+    )
+    request.state.correlation_id = correlation_id
     start = time.perf_counter()
     try:
         response = await call_next(request)

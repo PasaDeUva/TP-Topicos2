@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,10 +64,10 @@ async def obtener_compra(
 async def crear_compra(
     payload: CompraIn,
     response: Response,
+    request: Request,
     idempotency_key: str = Header(..., min_length=1, max_length=255),
     session: AsyncSession = Depends(get_session),
     events_client: EventsClient = Depends(get_events_client),
-    x_correlation_id: str | None = Header(default=None),
 ):
     existente = await _buscar_por_clave(session, payload.cliente_id, idempotency_key)
     if existente is not None:
@@ -75,7 +75,7 @@ async def crear_compra(
 
     try:
         evento = await events_client.obtener_evento(
-            payload.evento_id, x_correlation_id or str(uuid.uuid4())
+            payload.evento_id, request.state.correlation_id
         )
     except EventsServiceError:
         raise HTTPException(status_code=503, detail="events service unavailable")

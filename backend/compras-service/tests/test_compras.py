@@ -219,3 +219,20 @@ async def test_correlation_id_se_propaga_a_eventos(client, eventos_simulados):
 
     assert response.headers["X-Correlation-Id"] == correlation
     assert eventos_simulados["correlation_ids"] == [correlation]
+
+
+async def test_correlation_id_generado_se_propaga_a_eventos_si_no_se_envia_header(
+    client, eventos_simulados
+):
+    evento_id, evento = evento_fake()
+    eventos_simulados["eventos"][evento_id] = evento
+
+    response = await registrar(
+        client,
+        compra_payload(evento_id, evento["modalidades"][0]["id"]),
+    )
+
+    assert response.status_code == 201
+    correlation_generado = response.headers["X-Correlation-Id"]
+    assert correlation_generado is not None
+    assert eventos_simulados["correlation_ids"] == [correlation_generado]
