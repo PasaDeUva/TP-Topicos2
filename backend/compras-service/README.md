@@ -77,7 +77,12 @@ docker compose run --rm backend-tests sh -c "cd compras-service && pytest -v"
 
 # Correr linters
 docker compose run --rm --no-deps backend-tests python -m ruff check compras-service
+
+# Verificación de caja negra contra Compose real (events-service + compras-service y sus bases)
+python backend/compras-service/scripts/verify_compose.py
 ```
+
+El script levanta un proyecto Compose aislado con copias temporales de los servicios, crea un evento en Eventos y verifica por HTTP: compra 201, reintento idempotente 200 con el mismo id, conflicto 409 con otra modalidad, listado 200 y registros de bitácora con `correlation_id` y `duration_ms` en ambos servicios. Al terminar baja el proyecto y borra los volúmenes.
 
 ## Observabilidad y Bitácora HTTP
 

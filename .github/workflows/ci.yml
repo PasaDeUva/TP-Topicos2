@@ -68,6 +68,9 @@ jobs:
       - name: Test Identity Compose integration
         run: python backend/identity-service/scripts/verify_compose.py
 
+      - name: Test Compras Compose integration
+        run: python backend/compras-service/scripts/verify_compose.py
+
       - name: Lint frontend
         run: docker compose run --rm --no-deps mock-app npm run lint
 

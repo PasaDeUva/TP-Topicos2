@@ -61,7 +61,7 @@ services:
       POSTGRES_USER: events
       POSTGRES_PASSWORD: events
     ports:
-      - "5433:5432"
+      - "${EVENTS_DB_HOST_PORT:-5433}:5432"
     volumes:
       - events-db-data:/var/lib/postgresql/data
       - ./backend/events-service/scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
@@ -145,7 +145,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://events:events@events-db:5432/events_db
     ports:
-      - "8001:8000"
+      - "${EVENTS_SERVICE_HOST_PORT:-8001}:8000"
     volumes:
       - ./backend/events-service:/app
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
@@ -160,7 +160,7 @@ services:
       POSTGRES_USER: compras
       POSTGRES_PASSWORD: compras
     ports:
-      - "5436:5432"
+      - "${COMPRAS_DB_HOST_PORT:-5436}:5432"
     volumes:
       - compras-db-data:/var/lib/postgresql/data
       - ./backend/compras-service/scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
@@ -177,7 +177,7 @@ services:
       DATABASE_URL: postgresql+psycopg://compras:compras@compras-db:5432/compras_db
       EVENTS_SERVICE_URL: http://events-service:8000
     ports:
-      - "8003:8000"
+      - "${COMPRAS_SERVICE_HOST_PORT:-8003}:8000"
     volumes:
       - ./backend/compras-service:/app
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

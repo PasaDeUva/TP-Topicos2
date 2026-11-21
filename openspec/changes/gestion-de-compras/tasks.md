@@ -23,7 +23,7 @@
 
 - [x] 4.1 Configurar `tests/conftest.py` (base `compras_test` con rechazo de `compras_db`, sesión, cliente HTTP y fábrica de eventos simulados) y confirmar que los tests de los grupos 2 y 3 residen en `tests/test_compras.py`; verificar con `docker compose run --rm backend-tests sh -c "cd compras-service && pytest"`.
 - [x] 4.2 Actualizar `.github/workflows/ci.yml` con `compras-db`, `alembic upgrade head`, `alembic check` y `ruff check` para `compras-service`; verificar con `docker compose run --rm --no-deps backend-tests python -m ruff check mock-service events-service compras-service`.
-- [x] 4.3 Verificar la integración real: con `events-service` y `compras-service` levantados, crear un evento general por `POST /eventos` y registrar una compra por `POST /compras` con `curl`, confirmando `201`, el reintento con `200` y el listado por cliente.
+- [x] 4.3 Verificar la integración real: con `events-service` y `compras-service` levantados en Docker Compose, ejecutar `backend/compras-service/scripts/verify_compose.py`, que crea un evento general por `POST /eventos`, registra una compra por `POST /compras` confirmando `201`, el reintento con `200` y el listado por cliente, y revisa la bitácora de ambos servicios con el `correlation_id`.
 - [x] 4.4 Ejecutar la suite completa con `docker compose run --rm backend-tests` y confirmar que los tests de `events-service` y `mock-service` siguen pasando.
 
 ## Workflow follow-up
