@@ -2,18 +2,18 @@
 
 ## 1. Soporte de Modelo y Configuración de TTL
 
-- [ ] 1.1 Incorporar columna `expira_en` en el modelo `Reserva` en `app/models.py` y en la migración de inventario; verificar aplicando `docker compose run --rm events-service alembic upgrade head` y `alembic check`.
-- [ ] 1.2 Agregar variable de configuración `RESERVA_TTL_MINUTES` en `app/config.py` con valor por defecto de 10 minutos; verificar mediante prueba unitaria de carga de configuración.
+- [ ] 1.1 Verificar que la columna `expira_en` forme parte de la migración `0002_add_inventario.py` y del modelo `Reserva` en `backend/events-service/app/models.py`; verificar aplicando `docker compose run --rm events-service alembic upgrade head` y `docker compose run --rm events-service alembic check`.
+- [ ] 1.2 Agregar variable de configuración `RESERVA_TTL_MINUTES` en `backend/events-service/app/config.py` con valor por defecto de 10 minutos; verificar mediante prueba unitaria de carga de configuración en `tests/test_eventos.py`.
 
-## 2. Implementación de Exclusión Mutua en Reservas
+## 2. Implementación de Exclusión Mutua y Liberación Perezosa
 
-- [ ] 2.1 Implementar la reserva atómica condicional de asientos numerados (`UPDATE asientos SET estado = 'reservado' WHERE id = :id AND estado = 'libre'`) en `app/routers.py`; verificar con test de concurrencia paralelo (`pytest -k test_reserva_asiento_concurrente`) que ante dos solicitudes simultáneas por el mismo asiento exactamente una responda 201 y la otra 409.
-- [ ] 2.2 Implementar el aislamiento transaccional con `with_for_update()` en la reserva de modalidad general en `app/routers.py`; verificar con test de concurrencia (`pytest -k test_reserva_cupo_concurrente`) que ante múltiples solicitudes que excedan el cupo disponible se rechace el sobrante con 409.
+- [ ] 2.1 Implementar la liberación perezosa y la reserva atómica condicional de asientos numerados (`UPDATE asientos SET estado = 'reservado' WHERE id = :id AND estado = 'libre'`) en `backend/events-service/app/routers.py`; verificar con test de concurrencia paralelo en `tests/test_concurrencia.py` que solicitudes simultáneas sobre el mismo asiento resulten en un único 201 y el resto 409.
+- [ ] 2.2 Implementar el aislamiento transaccional con `with_for_update()` en la reserva de modalidad general y cómputo de ocupación (`confirmadas + activas vigentes`) en `backend/events-service/app/routers.py`; verificar con test de concurrencia en `tests/test_concurrencia.py` que compras posteriores a confirmaciones no excedan el cupo.
 
 ## 3. Lógica y Validación de Expiración por TTL
 
-- [ ] 3.1 Actualizar el cálculo de disponibilidad en `GET .../disponibilidad` para computar como disponibles las reservas activas cuyo `expira_en` haya vencido; verificar con test de disponibilidad tras expiración de reserva.
-- [ ] 3.2 Implementar validación en `POST .../confirmar` que rechace con 409 reservas con TTL vencido y libere el asiento asociado; verificar con test de confirmación de reserva expirada.
+- [ ] 3.1 Actualizar el cálculo de disponibilidad en `GET .../disponibilidad` para computar como disponibles las reservas activas cuyo `expira_en` haya vencido; verificar con test de disponibilidad tras expiración de reserva en `tests/test_concurrencia.py`.
+- [ ] 3.2 Implementar validación en `POST .../confirmar` que retorne 200 idempotente si ya está confirmada y 409 si expiró por TTL, liberando el asiento asociado; verificar con test de confirmación en `tests/test_concurrencia.py`.
 
 ## 4. Pruebas y Validación Final
 

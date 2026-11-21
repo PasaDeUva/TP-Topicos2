@@ -6,15 +6,16 @@
 
 ## What Changes
 
-- Agregar `precio` y `cupo` a `modalidades` en `events-service` (migración `0002`).
-- Modelar asientos numerados: nuevas tablas `sectores` y `asientos` con estado `libre / reservado / vendido`.
-- Extender `POST /eventos` y `PUT /eventos/{id}` para aceptar precio, cupo y, en modalidad numerada, sectores con sus asientos iniciales.
+- Agregar `precio` (para general) y `cupo` a `modalidades` en `events-service`, mediante la migración unificada `0002_add_inventario.py`.
+- Modelar asientos numerados: nuevas tablas `sectores` (con precio por sector) y `asientos` con estado `libre / reservado / vendido`.
+- Crear tabla `reservas` con identificador `reserva_id`, vinculación a modalidad y asiento opcional, y marca de expiración `expira_en`.
+- Extender `POST /eventos` y `PUT /eventos/{id}` para aceptar precio y cupo en general, y sectores con precio y asientos en numerado. Proteger `PUT /eventos/{id}` rechazando con `409 Conflict` la eliminación de modalidades con reservas activas o confirmadas.
 - Extender `GET /eventos/{id}` para exponer precio, cupo y, en modalidad numerada, sectores y asientos.
-- Nuevo endpoint `GET /eventos/{id}/modalidades/{mid}/disponibilidad`: devuelve cupo restante (general) o cantidad de asientos libres (numerado).
-- Nuevos endpoints de ciclo de vida de reservas (sin mecanismo de concurrencia, que se especifica en el change `concurrencia-de-reservas`):
+- Nuevo endpoint `GET /eventos/{id}/modalidades/{mid}/disponibilidad`: devuelve cupo restante (general, considerando confirmadas y activas no vencidas) o cantidad de asientos libres (numerado).
+- Nuevos endpoints de ciclo de vida de reservas (con exclusión mutua detallada en el change complementario `concurrencia-de-reservas`):
   - `POST /eventos/{id}/modalidades/{mid}/reservas` → reservar; devuelve `reserva_id`.
-  - `DELETE /eventos/{id}/modalidades/{mid}/reservas/{reserva_id}` → liberar (compensación ante pago fallido).
-  - `POST /eventos/{id}/modalidades/{mid}/reservas/{reserva_id}/confirmar` → marcar vendido.
+  - `DELETE /eventos/{id}/modalidades/{mid}/reservas/{reserva_id}` → liberar (compensación ante pago fallido, 409 si ya no está activa).
+  - `POST /eventos/{id}/modalidades/{mid}/reservas/{reserva_id}/confirmar` → confirmar venta (idempotente 200 si ya confirmada, 409 si liberada o expirada).
 
 ## Capabilities
 
@@ -24,12 +25,12 @@
 
 ### Modified Capabilities
 
-- `gestion-de-eventos`: los endpoints de alta y edición de eventos pasan a aceptar precio, cupo y sectores; el detalle del evento pasa a exponer esos campos.
+- `gestion-de-eventos`: los endpoints de alta y edición de eventos pasan a aceptar precio, cupo y sectores, y el detalle del evento pasa a exponer esos campos, protegiendo modalidades con ventas contra borrado.
 
 ## Impact
 
 - **APIs modificadas:** `POST /eventos`, `PUT /eventos/{id}`, `GET /eventos`, `GET /eventos/{id}`.
 - **APIs nuevas:** `GET .../disponibilidad`, `POST .../reservas`, `DELETE .../reservas/{id}`, `POST .../reservas/{id}/confirmar`.
-- **Base de datos:** migración `0002` en `events-service`; nuevas tablas `sectores` y `asientos`.
-- **ADR nuevo:** ADR-0007 sobre modelo de inventario y frontera con `compras-service`.
+- **Base de datos:** migración unificada `0002_add_inventario.py` en `events-service` creando `sectores`, `asientos` y `reservas`.
+- **ADRs:** ADR-0007 (modelo de inventario) y ADR-0008 (control de concurrencia y TTL).
 - **Sin impacto en** `compras-service`, `identity-service` ni `compose.yaml`.

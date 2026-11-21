@@ -9,25 +9,25 @@ Ver [proposal.md](./proposal.md) y [specs/inventario-de-entradas/spec.md](./spec
 ## Goals / Non-Goals
 
 **Goals:**
-- Extender el modelo relacional de `events-service` para soportar precios y cupos en modalidades generales, y sectores con asientos para modalidades numeradas ([ADR-0007](../../../docs/adr/0007-modelo-inventario-asientos-y-tarifas.md)).
-- Gestionar el ciclo de vida funcional de reservas: consulta de disponibilidad, creación de reserva, liberación (compensación) y confirmación de venta.
+- Extender el modelo relacional de `events-service` para soportar precios y cupos en modalidades generales, y sectores con tarifas y asientos para modalidades numeradas ([ADR-0007](../../../docs/adr/0007-modelo-inventario-asientos-y-tarifas.md)).
+- Gestionar el ciclo de vida funcional de reservas: consulta de disponibilidad, creación de reserva, liberación (compensación) y confirmación de venta, garantizando respuestas uniformes e idempotencia en confirmación.
+- Proteger la integridad de datos impidiendo que la edición total de eventos (`PUT /eventos/{id}`) elimine modalidades con entradas vendidas o reservadas.
 - Mantener compatibilidad hacia atrás en las operaciones existentes de catálogo (`GET /eventos`, `GET /eventos/{id}`, `POST /eventos`, `PUT /eventos/{id}`).
 
 **Non-Goals:**
-- Mecanismos de control de concurrencia para evitar sobreventa o condiciones de carrera (bloqueos atómicos, optimistas o pesimistas): se implementan en el change técnico `concurrencia-de-reservas`.
-- Expiración automática de reservas por TTL: se difiere a `concurrencia-de-reservas` / Etapa III.
+- Colas masivas de espera y buffers encolados (alcance de Etapa III - Colas de venta).
 - Pagos, cobros y facturación: responsabilidad de `payment-service`.
 - Reserva múltiple en una única operación (batch / cantidad > 1): alcance futuro.
 
 ## Decisions
 
-### 1. Modelo de datos e inventario relacional
+### 1. Modelo de datos e inventario relacional (Migración unificada)
 
-Se añade la migración `0002_add_inventario.py` en `events-service`:
+Se unifica el DDL en la migración `0002_add_inventario.py` en `events-service`, incorporando la columna `expira_en` desde el inicio para coherencia con el change técnico:
 
 ```sql
 ALTER TABLE modalidades
-    ADD COLUMN precio NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    ADD COLUMN precio NUMERIC(10, 2) NULL,
     ADD COLUMN cupo INTEGER NULL;
 
 CREATE TABLE sectores (
@@ -49,9 +49,10 @@ CREATE TABLE asientos (
 
 CREATE TABLE reservas (
     id UUID PRIMARY KEY,
-    modalidad_id UUID NOT NULL REFERENCES modalidades(id) ON DELETE CASCADE,
-    asiento_id UUID NULL REFERENCES asientos(id) ON DELETE SET NULL,
+    modalidad_id UUID NOT NULL REFERENCES modalidades(id) ON DELETE RESTRICT,
+    asiento_id UUID NULL REFERENCES asientos(id) ON DELETE RESTRICT,
     estado VARCHAR(20) NOT NULL DEFAULT 'activa',
+    expira_en TIMESTAMPTZ NOT NULL,
     creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT ck_reservas_estado CHECK (estado IN ('activa', 'confirmada', 'liberada'))
 );
@@ -59,47 +60,57 @@ CREATE INDEX ix_reservas_modalidad_estado ON reservas (modalidad_id, estado);
 ```
 
 **Justificación:**
-- Separa la gestión escalar de cupo (modalidad general) del mapa posicional (asientos numerados), tal como lo estipula el glosario del proyecto.
-- `reservas` registra los identificadores `reserva_id` retornados a los consumidores (p. ej. `compras-service`), desacoplando el estado interno de la venta.
+- Distinción clara de tarifas: en `general`, la tarifa plana vive en `modalidades.precio`. En `numerado`, `modalidades.precio` es `NULL` y cada sector gobierna su propia tarifa en `sectores.precio`.
+- `ON DELETE RESTRICT` en `reservas` impide borrados accidentales de transacciones comerciales.
 
-**Alternativas consideradas:**
-- *Manejar asientos como un contador simple sin filas ni números:* Descartado porque la modalidad numerada exige identificar y reservar ubicaciones exactas.
-- *Guardar el inventario en `compras-service`:* Descartado por violar la frontera de bounded context; el catálogo y su capacidad residen en `events-service`.
+### 2. Integridad en `PUT /eventos/{id}`
 
-### 2. Contratos REST y ciclo de vida de reservas
+- En el handler de `PUT /eventos/{id}`, previo a eliminar las modalidades omitidas del nuevo payload, se consulta:
+  ```python
+  reservas_existentes = await session.scalar(
+      select(func.count(Reserva.id)).where(
+          Reserva.modalidad_id.in_(ids_a_eliminar),
+          Reserva.estado.in_(["activa", "confirmada"])
+      )
+  )
+  if reservas_existentes > 0:
+      raise HTTPException(status_code=409, detail="modalidad con reservas o ventas asociadas")
+  ```
+
+### 3. Contratos REST y respuestas uniformes
 
 Se incorporan 4 endpoints bajo el router de eventos en `events-service`:
 1. `GET /eventos/{id}/modalidades/{mid}/disponibilidad`:
-   - En `general`: `cupo - COUNT(reservas activas o confirmadas)`.
-   - En `numerado`: `COUNT(asientos con estado = 'libre')`.
+   - En `general`: `cupo - COUNT(reservas activas no vencidas + confirmadas)`.
+   - En `numerado`: `COUNT(asientos con estado = 'libre' o con reserva activa expirada)`.
    - Retorna `200 {"disponibles": <int>}` o `404`.
 2. `POST /eventos/{id}/modalidades/{mid}/reservas`:
-   - En `general`: valida disponibilidad > 0, crea reserva activa, retorna `201 {"reserva_id": "<uuid>"}`.
-   - En `numerado`: requiere body `{"asiento_id": "<uuid>"}`, valida asiento libre, actualiza asiento a `reservado`, crea reserva activa con `asiento_id`, retorna `201 {"reserva_id": "<uuid>"}`.
+   - En `general`: valida disponibilidad > 0, crea reserva activa con `expira_en`, retorna `201 {"reserva_id": "<uuid>"}`.
+   - En `numerado`: requiere body `{"asiento_id": "<uuid>"}`, valida asiento libre, actualiza asiento a `reservado`, crea reserva activa con `asiento_id` y `expira_en`, retorna `201 {"reserva_id": "<uuid>"}`.
    - Si no hay disponibilidad o el asiento no está libre: responde `409 {"detail": "sin disponibilidad"}` o `409 {"detail": "asiento no disponible"}`.
 3. `DELETE /eventos/{id}/modalidades/{mid}/reservas/{reserva_id}`:
-   - Cambia estado de reserva a `liberada`.
-   - Si es numerada, restaura `asiento.estado = 'libre'`.
-   - Responde `200 {"status": "liberada"}` o `404` si no existe, `409` si ya estaba confirmada.
+   - Si la reserva ya está `liberada` o `confirmada`: rechaza con `409 Conflict`.
+   - Si está activa: cambia estado a `liberada`, restaura `asiento.estado = 'libre'`, y responde `200 {"status": "liberada"}`.
 4. `POST /eventos/{id}/modalidades/{mid}/reservas/{reserva_id}/confirmar`:
-   - Cambia estado de reserva a `confirmada`.
-   - Si es numerada, actualiza `asiento.estado = 'vendido'`.
-   - Responde `200 {"status": "confirmada"}` o `404`/`409`.
+   - Si ya está `confirmada`: responde `200 {"status": "confirmada"}` (idempotencia).
+   - Si está `liberada` o vencida por TTL (`expira_en <= now()`): rechaza con `409 Conflict`.
+   - Si está activa: cambia estado a `confirmada`, actualiza asiento a `vendido`, y responde `200 {"status": "confirmada"}`.
 
-**Justificación:** Satisface íntegramente el flujo de compensación y confirmación requerido por ADR-0006.
+### 4. Actualización de esquemas de Catálogo
 
-### 3. Actualización de esquemas de Catálogo
-
-- `ModalidadIn`: añade `precio: Decimal = Field(ge=0)` y `cupo: int | None = Field(default=None, ge=1)`. Añade campo opcional `sectores: list[SectorIn] = []`.
-- Se valida con `@model_validator(mode="after")` que si `tipo == "general"`, `cupo` sea obligatorio; si `tipo == "numerado"`, `sectores` contenga al menos un sector con asientos válidos.
-- `ModalidadOut`: expone `precio`, `cupo`, y la lista de `sectores` con sus `asientos`.
+- `ModalidadIn`:
+  - `precio: Decimal | None = None`
+  - `cupo: int | None = None`
+  - `sectores: list[SectorIn] = []`
+  - Validación con `@model_validator(mode="after")`:
+    - Si `tipo == "general"`: `precio` y `cupo` obligatorios (`precio >= 0`, `cupo >= 1`).
+    - Si `tipo == "numerado"`: `sectores` debe tener al menos un sector, cada sector con `precio >= 0` y lista de asientos.
+- `ModalidadOut`: expone `precio`, `cupo` y `sectores` con sus `asientos`.
 
 ## Risks / Trade-offs
 
-- **[Sin exclusión mutua de concurrencia en esta spec]** → Dos reservas simultáneas sobre el último cupo o mismo asiento podrían pasar las validaciones antes de persistir.
-  *Mitigación:* Se implementa a continuación en el change complementario `concurrencia-de-reservas` (mecanismo UPDATE condicional / locks).
-- **[Acumulación de reservas no confirmadas sin TTL]** → Reservas que no lleguen a confirmarse o liberarse retendrán cupo.
-  *Mitigación:* Se aborda en `concurrencia-de-reservas` con TTL y política de expiración.
+- **[Bloqueo de eliminación en PUT]** → Organizadores no pueden eliminar modalidades con ventas activas.
+  *Mitigación:* Es el comportamiento correcto de negocio. Para suspender ventas futuras se utiliza la baja lógica (`activo = false`) sin destruir la trazabilidad.
 
 ## Migration Plan
 

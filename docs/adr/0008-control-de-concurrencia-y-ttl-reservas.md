@@ -1,6 +1,6 @@
 # ADR-0008: Control de concurrencia y expiración por TTL en reservas de inventario
 
-- Estado: Propuesto
+- Estado: Aceptado
 - Fecha: 2026-11-19
 
 ## Contexto
@@ -12,34 +12,42 @@ Asimismo, de acuerdo con [ADR-0006](0006-flujo-de-compra-completo.md), las reser
 ## Decisión
 
 1. **Control de concurrencia para modalidad general (cupos):**
-   - Utilizar sentencias SQL atómicas condicionales basadas en el estado persistido.
-   - La reserva de cupo ejecuta una sentencia atómica:
-     `UPDATE modalidades SET ... WHERE id = :modalidad_id AND (cupo - subquery_reservas_activas) >= :cantidad`
-     o verificación atómica en transacción serializable/row-level lock sobre la fila de modalidad en `events-service`. Si no se afecta ninguna fila o no hay disponibilidad remanente, se retorna inmediatamente `409 Conflict`.
-2. **Control de concurrencia para modalidad numerada (asientos individuales):**
-   - Actualización atómica con predicado de exclusión mutua:
+   - Se fija la estrategia de serialización por fila mediante `SELECT id, cupo FROM modalidades WHERE id = :modalidad_id FOR UPDATE`.
+   - Se computa atómicamente la ocupación vigente:
+     `COUNT(id) FROM reservas WHERE modalidad_id = :modalidad_id AND estado IN ('activa', 'confirmada') AND (estado = 'confirmada' OR expira_en > NOW())`.
+   - Si `ocupadas >= cupo`, se aborta la transacción y se retorna inmediatamente `409 Conflict`. Caso contrario, se inserta la nueva reserva activa dentro de la misma transacción.
+   - El lock a nivel de fila se retiene únicamente durante los milisegundos de la transacción de reserva de esa modalidad específica, sin contención sobre otros eventos ni modalidades.
+
+2. **Control de concurrencia para modalidad numerada (asientos individuales) y liberación perezosa:**
+   - Previo a la asignación o al computar disponibilidad, se ejecuta una liberación perezosa (lazy cleanup) dentro de la transacción:
+     `UPDATE reservas SET estado = 'liberada' WHERE modalidad_id = :mid AND estado = 'activa' AND expira_en <= NOW()`
+     restituyendo a su vez `asientos.estado = 'libre'` para los asientos asociados a esas reservas caducadas.
+   - La reserva efectiva se ejecuta con la sentencia atómica condicional:
      `UPDATE asientos SET estado = 'reservado' WHERE id = :asiento_id AND estado = 'libre'`
-   - Si la sentencia afecta 0 filas, significa que otro proceso en competencia ya tomó el asiento, respondiendo `409 Conflict`.
-   - Se descarta el uso de `SELECT ... FOR UPDATE` global o bloqueos a nivel de tabla para favorecer la escalabilidad en lecturas y reservas de distintos asientos.
+   - Si la sentencia afecta 0 filas, se responde `409 Conflict`.
+
 3. **Mecanismo de expiración por TTL (Time-To-Live):**
-   - Cada reserva se crea con una marca temporal `expira_en` calculada a partir de un TTL configurable (default: 10 minutos).
-   - En las consultas de disponibilidad y al intentar confirmar o reservar, las reservas con `estado = 'activa'` y `expira_en < NOW()` se consideran vencidas automáticamente y son liberadas para reingresar al inventario disponible.
+   - Cada reserva se crea con `expira_en = NOW() + interval '10 minutes'` (configurable vía `RESERVA_TTL_MINUTES`).
+   - En las consultas de disponibilidad y confirmación:
+     - Disponibilidad contabiliza como libres los asientos que ya están `libre` o cuya reserva activa haya expirado.
+     - `POST .../confirmar` valida `expira_en > NOW()`. Si ya venció, se transiciona a `liberada` (restituyendo el asiento a `libre`) y se rechaza con `409 Conflict`.
+     - Si la reserva ya se encontraba `confirmada`, se retorna `200 OK` garantizando idempotencia. Si se encontraba `liberada`, se rechaza con `409 Conflict`.
 
 ## Consecuencias
 
 ### Positivas
 
-- Garantía estricta contra sobreventa y doble venta de tickets bajo alta concurrencia.
-- La actualización atómica con condición (`UPDATE ... WHERE estado = 'libre'`) delega el aislamiento a nivel de fila al motor relacional de PostgreSQL sin locks globales.
-- Las reservas abandonadas son recuperadas automáticamente gracias al TTL, impidiendo la denegación de inventario.
+- Garantía estricta contra sobreventa y doble venta de tickets bajo alta concurrencia tanto en ventas preliminares como post-confirmación.
+- Los asientos y cupos retenidos por reservas abandonadas vuelven al inventario disponible de forma determinística mediante liberación perezosa.
+- Comportamiento idempotente y seguro ante reintentos de confirmación y compensación.
 
 ### Negativas
 
-- Las consultas de disponibilidad deben computar o filtrar reservas vencidas por TTL si aún no fueron depuradas explícitamente en la base.
-- Si el TTL es demasiado corto, clientes con latencia de pago podrían ver cancelada su reserva; si es demasiado largo, se bloquea inventario útil.
+- El lock `FOR UPDATE` serializa reservas concurrentes de la misma modalidad general (mitigado porque la transacción solo ejecuta un count indexado y un insert rápido).
+- La liberación perezosa traslada la recuperación de asientos al momento de las consultas o intentos de reserva, requiriendo transacciones de escritura breves en operaciones de inventario.
 
 ## Alternativas consideradas
 
-- **Bloqueo pesimista (`SELECT ... FOR UPDATE`):** Descartado para la reserva general por generar contención innecesaria de transacciones en escenarios de alta demanda masiva.
+- **Columna mutable de cupo decrementable en `modalidades`:** Descartado para mantener trazabilidad histórica inmutable de cada reserva creada con su propio identificador y TTL.
+- **Worker / Cron asíncrono desacoplado para TTL:** Se complementa con la liberación perezosa sincrónica para no depender de infraestructura externa de scheduling en el despliegue local mínimo.
 - **Transacciones distribuidas (2PC):** Estrictamente prohibidas por las directivas de la cátedra ("materia oscura").
-- **Proceso de fondo (cron/worker) para limpiar TTL:** Se complementa con verificación pasiva en el momento de consulta y mutación para evitar depender de tareas asíncronas no garantizadas en el entorno local mínimo.
