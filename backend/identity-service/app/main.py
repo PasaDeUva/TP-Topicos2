@@ -14,13 +14,13 @@ from sqlalchemy.orm import Session
 
 from app.accounts import create_account
 from app.database import get_session
-from app.models import ACCOUNT_EMAIL_CONSTRAINT, Account, RoleAssignment
+from app.models import ACCOUNT_EMAIL_CONSTRAINT, Account, RoleAssignment, Session as LoginSession
 from app.observability import request_log
 from app.schemas import (
     AccountOut, AccountRolesOut, CsrfOut, ErrorOut, Login, OrganizerStatus, OrganizerStatusOut,
-    PASSWORD_MIN_LENGTH, RefreshRequest, Registration, RoleOut, RoleRequest, RolesOut, TokenOut, WebLoginOut, WebTokenOut, OrganizerOut,
+    PASSWORD_MIN_LENGTH, RefreshRequest, Registration, RoleOut, RoleRequest, RolesOut, TokenOut, WebLoginOut, WebTokenOut, OrganizerOut, SessionVerifyRequest, SessionVerifyOut,
 )
-from app.service_auth import authorize_service
+from app.service_auth import authorize_service, authorize_session_service
 from app.sessions import locked_refresh_session, revoke_session, rotate_session, start_session
 from app.tokens import verify_access_token
 from app.web_config import WebSessionConfig, load_web_session_config
@@ -70,17 +70,24 @@ def http_error(request: Request, exc: HTTPException):
     return JSONResponse(status_code=exc.status_code, content={"code": exc.detail, "message": "Request rejected"}, headers=headers)
 
 
-def current_account(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), session: Session = Depends(get_session)) -> Account:
-    if credentials is None:
-        raise HTTPException(status_code=401, detail="invalid_credentials")
+def verified_account(token: str, session: Session) -> Account:
     try:
-        account_id = verify_access_token(credentials.credentials)
+        account_id, session_id = verify_access_token(token)
     except (jwt.InvalidTokenError, ValueError, TypeError):
         raise HTTPException(status_code=401, detail="invalid_credentials") from None
-    account = session.get(Account, account_id)
+    account = session.scalar(select(Account).join(LoginSession, LoginSession.account_id == Account.id).where(
+        Account.id == account_id, LoginSession.id == session_id, LoginSession.revoked.is_(False),
+        LoginSession.expires_at > datetime.now(timezone.utc),
+    ))
     if account is None:
         raise HTTPException(status_code=401, detail="invalid_credentials")
     return account
+
+
+def current_account(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), session: Session = Depends(get_session)) -> Account:
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="invalid_credentials")
+    return verified_account(credentials.credentials, session)
 
 
 @app.post("/auth/login", response_model=TokenOut, responses={400: {"model": ErrorOut}, 401: {"model": ErrorOut}})
@@ -248,6 +255,12 @@ def set_organizer_status(account_id: UUID, payload: OrganizerStatus, account: Ac
     role.status = payload.status
     session.commit()
     return {"account_id": str(account_id), "status": payload.status}
+
+
+@app.post("/internal/sessions/verify", response_model=SessionVerifyOut, dependencies=[Depends(authorize_session_service)], responses={400: {"model": ErrorOut}, 401: {"model": ErrorOut}, 403: {"model": ErrorOut}, 503: {"model": ErrorOut}})
+def verify_session(payload: SessionVerifyRequest, response: Response, session: Session = Depends(get_session)):
+    response.headers["Cache-Control"] = "no-store"
+    return {"account_id": verified_account(payload.access_token, session).id}
 
 
 @app.get("/internal/accounts/{account_id}/roles", response_model=AccountRolesOut, dependencies=[Depends(authorize_service)], responses={400: {"model": ErrorOut}, 401: {"model": ErrorOut}, 403: {"model": ErrorOut}, 404: {"model": ErrorOut}, 503: {"model": ErrorOut}})

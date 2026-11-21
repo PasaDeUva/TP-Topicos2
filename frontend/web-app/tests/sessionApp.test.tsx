@@ -21,6 +21,13 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 
 describe("session interface", () => {
+  it("returns to login when Identity rejects an earlier access token", async () => {
+    mocks.restore.mockResolvedValueOnce({ access_token: "legacy-access", csrf_token: "csrf-secret", expires_in: 600, generation: "one" });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
+    render(<App />);
+    expect(await screen.findByText("La sesión no es válida. Inicie sesión nuevamente.")).toBeTruthy();
+    expect(screen.queryByText(/Email:/)).toBeNull();
+  });
   it("restores a session and clears account data after logout", async () => {
     const user = userEvent.setup();
     render(<App />);

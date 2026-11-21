@@ -3,7 +3,7 @@ import json
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
-from threading import Barrier
+from threading import Barrier, Event
 
 import pytest
 import jwt
@@ -492,6 +492,127 @@ def test_admin_list_rejects_invalid_and_revoked_authority(client):
     role.status = "deshabilitado"
     db.commit()
     assert client.get("/admin/organizers", headers=headers).status_code == 403
+
+
+def test_access_token_revoked_immediately_and_sessions_are_independent(client):
+    email = f"{uuid.uuid4()}@example.com"
+    assert client.post("/auth/register", json={"email": email, "password": "password123", "role": "cliente"}).status_code == 201
+    first = client.post("/auth/login", json={"email": email, "password": "password123"}).json()
+    second = client.post("/auth/login", json={"email": email, "password": "password123"}).json()
+    first_headers = {"Authorization": f"Bearer {first['access_token']}"}
+    second_headers = {"Authorization": f"Bearer {second['access_token']}"}
+    assert client.get("/auth/me", headers=first_headers).status_code == 200
+    assert client.post("/auth/logout", json={"refresh_token": first["refresh_token"]}).status_code == 204
+    assert client.get("/auth/me", headers=first_headers).status_code == 401
+    assert client.get("/auth/me", headers=second_headers).status_code == 200
+
+
+def test_rejects_legacy_and_mismatched_session_tokens(client):
+    email = f"{uuid.uuid4()}@example.com"
+    client.post("/auth/register", json={"email": email, "password": "password123", "role": "cliente"})
+    token = client.post("/auth/login", json={"email": email, "password": "password123"}).json()["access_token"]
+    claims = jwt.decode(token, os.environ["JWT_PUBLIC_KEY"], algorithms=["RS256"], issuer="identity-test", audience="services-test")
+    legacy = dict(claims)
+    legacy.pop("sid")
+    other_email = f"{uuid.uuid4()}@example.com"
+    client.post("/auth/register", json={"email": other_email, "password": "password123", "role": "cliente"})
+    other_token = client.post("/auth/login", json={"email": other_email, "password": "password123"}).json()["access_token"]
+    other_claims = jwt.decode(other_token, os.environ["JWT_PUBLIC_KEY"], algorithms=["RS256"], issuer="identity-test", audience="services-test")
+    mismatch = {**claims, "sid": other_claims["sid"]}
+    for payload in (legacy, mismatch, {**claims, "sid": "invalid"}, {**claims, "sid": ["invalid"]}):
+        altered = jwt.encode(payload, os.environ["JWT_PRIVATE_KEY"], algorithm="RS256")
+        assert client.get("/auth/me", headers={"Authorization": f"Bearer {altered}"}).status_code == 401
+
+
+def test_refresh_replay_revokes_access_tokens(client):
+    email = f"{uuid.uuid4()}@example.com"
+    client.post("/auth/register", json={"email": email, "password": "password123", "role": "cliente"})
+    initial = client.post("/auth/login", json={"email": email, "password": "password123"}).json()
+    refreshed = client.post("/auth/refresh", json={"refresh_token": initial["refresh_token"]}).json()
+    assert client.post("/auth/refresh", json={"refresh_token": initial["refresh_token"]}).status_code == 401
+    for token in (initial["access_token"], refreshed["access_token"]):
+        assert client.get("/auth/me", headers={"Authorization": f"Bearer {token}"}).status_code == 401
+
+
+def test_access_is_rejected_after_concurrent_logout_commits(client):
+    engine = create_engine(os.environ["IDENTITY_TEST_DATABASE_URL"])
+    email = f"{uuid.uuid4()}@example.com"
+    with Session(engine) as db:
+        account = create_account(db, email, "password123")
+        account_id = account.id
+        db.add(RoleAssignment(account_id=account_id, role="cliente", status="activo"))
+        db.commit()
+        tokens = login(Login(email=email, password="password123"), db)
+    revoked = Event()
+
+    def close_session():
+        with Session(engine) as db:
+            from app.sessions import revoke_session
+            revoke_session(db, tokens["refresh_token"])
+        revoked.set()
+
+    def authorize_after_close():
+        assert revoked.wait(timeout=10)
+        from app.main import verified_account
+        with Session(engine) as db, pytest.raises(HTTPException) as error:
+            verified_account(tokens["access_token"], db)
+        assert error.value.status_code == 401
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            close = executor.submit(close_session)
+            check = executor.submit(authorize_after_close)
+            close.result(timeout=15)
+            check.result(timeout=15)
+    finally:
+        with Session(engine) as db:
+            ids = select(LoginSession.id).where(LoginSession.account_id == account_id)
+            db.execute(delete(RefreshCredential).where(RefreshCredential.session_id.in_(ids)))
+            db.execute(delete(LoginSession).where(LoginSession.account_id == account_id))
+            db.execute(delete(RoleAssignment).where(RoleAssignment.account_id == account_id))
+            db.execute(delete(Account).where(Account.id == account_id))
+            db.commit()
+        engine.dispose()
+
+
+def test_internal_session_verification_checks_permission_and_revocation(client, monkeypatch, capsys):
+    monkeypatch.setenv("SERVICE_CREDENTIALS_JSON", json.dumps({"allowed": {"token": "service-secret", "roles_read": False, "sessions_read": True}, "legacy": {"token": "legacy-secret", "roles_read": True}}))
+    email = f"{uuid.uuid4()}@example.com"
+    registered = client.post("/auth/register", json={"email": email, "password": "password123", "role": "cliente"}).json()
+    tokens = client.post("/auth/login", json={"email": email, "password": "password123"}).json()
+    path = "/internal/sessions/verify"
+    body = {"access_token": tokens["access_token"]}
+    allowed = {"X-Service-Id": "allowed", "X-Service-Token": "service-secret"}
+    assert client.post(path, json=body).status_code == 401
+    assert client.post(path, headers={"X-Service-Id": "legacy", "X-Service-Token": "legacy-secret"}, json=body).status_code == 403
+    response = client.post(path, headers=allowed, json=body)
+    assert response.status_code == 200
+    assert response.json() == {"account_id": registered["account_id"]}
+    assert response.headers["cache-control"] == "no-store"
+    assert client.post(path, headers=allowed, json={"access_token": "invalid"}).status_code == 401
+    assert client.post(path, headers=allowed, json={}).status_code == 400
+    monkeypatch.delenv("SERVICE_CREDENTIALS_JSON")
+    assert client.post(path, headers=allowed, json=body).status_code == 503
+    monkeypatch.setenv("SERVICE_CREDENTIALS_JSON", json.dumps({"allowed": {"token": "service-secret", "roles_read": False, "sessions_read": True}}))
+    assert client.post("/auth/logout", json={"refresh_token": tokens["refresh_token"]}).status_code == 204
+    assert client.post(path, headers=allowed, json=body).status_code == 401
+    logs = capsys.readouterr().out
+    assert tokens["access_token"] not in logs and "service-secret" not in logs
+
+
+def test_web_logout_revokes_access_token(client, monkeypatch):
+    monkeypatch.setenv("IDENTITY_ENV", "production")
+    monkeypatch.setenv("IDENTITY_WEB_ORIGINS", "https://app.example.com")
+    monkeypatch.setenv("IDENTITY_WEB_CSRF_SECRET", "x" * 32)
+    monkeypatch.delenv("IDENTITY_WEB_ALLOW_LOCAL_HTTP", raising=False)
+    email = f"{uuid.uuid4()}@example.com"
+    client.post("/auth/register", json={"email": email, "password": "password123", "role": "cliente"})
+    login_response = client.post("/auth/web/login", headers={"Origin": "https://app.example.com"}, json={"email": email, "password": "password123"})
+    token = login_response.json()["access_token"]
+    csrf = login_response.json()["csrf_token"]
+    headers = {"Origin": "https://app.example.com", "X-CSRF-Token": csrf, "Cookie": login_response.headers["set-cookie"].split(";", 1)[0]}
+    assert client.post("/auth/web/logout", headers=headers).status_code == 204
+    assert client.get("/auth/me", headers={"Authorization": f"Bearer {token}"}).status_code == 401
 
 
 def test_admin_changes_organizer_without_affecting_client(client):
