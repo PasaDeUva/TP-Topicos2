@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Alta de evento
-El sistema SHALL permitir crear un evento con sus modalidades mediante `POST /eventos`. El campo `nombre` es obligatorio. El campo `owner_id` viaja en el body; la autenticación del organizador se delega a un change futuro. Los UUIDs del evento y sus modalidades SHALL ser autogenerados por el sistema. Las modalidades de tipo `general` SHALL exigir `precio` y `cupo`. Las modalidades de tipo `numerado` SHALL exigir una lista de sectores; cada sector incluye su nombre, precio propio y lista de asientos con `fila` y `numero`.
+El sistema SHALL permitir crear un evento con sus modalidades mediante `POST /eventos`. El campo `nombre` es obligatorio y el `owner_id` viaja en el body. Los UUIDs del evento y modalidades SHALL ser autogenerados. Las modalidades `general` SHALL exigir `precio` y `cupo`. Las modalidades `numerado` SHALL exigir sectores con nombre, precio y asientos (`fila`, `numero`).
 
 #### Scenario: Creación exitosa de evento
 - **WHEN** se envía `POST /eventos` con `nombre`, `venue`, `fecha` y al menos una modalidad con `tipo` ∈ {`numerado`, `general`}
@@ -46,15 +46,20 @@ El sistema SHALL exponer la consulta del catálogo de eventos y detalle por iden
 - **THEN** el sistema responde con código 404 Not Found
 
 ### Requirement: Edición completa de evento
-El sistema SHALL permitir reemplazar completamente un evento y todas sus modalidades mediante `PUT /eventos/{id}`. Las modalidades omitidas en el body son eliminadas (semántica de reemplazo total). Las reglas de validación de `precio`, `cupo` y sectores aplican igual que en el alta. Si se intenta eliminar una modalidad que posee reservas activas o confirmadas, el sistema MUST rechazar la operación con código 409 Conflict.
+El sistema SHALL permitir editar un evento y sus modalidades mediante `PUT /eventos/{id}`. Las modalidades en el payload pueden incluir opcionalmente su `id: UUID` para actualizar modalidades existentes preservando sus entidades hijas; las modalidades sin `id` se crean como nuevas. Las modalidades omitidas en el body son eliminadas únicamente si no poseen registros en el historial de reservas (`activa`, `confirmada` o `liberada`); en caso contrario el sistema MUST rechazar con código 409 Conflict.
 
 #### Scenario: Edición exitosa
 - **GIVEN** un evento registrado con un UUID determinado sin reservas asociadas en sus modalidades a eliminar
 - **WHEN** se envía `PUT /eventos/{id}` con datos válidos y un conjunto de modalidades con precio y cupo
-- **THEN** el sistema reemplaza los campos del evento y elimina las modalidades anteriores sustituyéndolas por las nuevas, respondiendo con código 200 OK
+- **THEN** el sistema reemplaza los campos del evento, actualiza las modalidades identificadas por `id` o crea las nuevas, y elimina las modalidades omitidas que no tengan historial, respondiendo con código 200 OK
 
-#### Scenario: Edición rechazada por modalidades con ventas asociadas
-- **GIVEN** un evento existente con una modalidad que posee al menos una reserva activa o confirmada
+#### Scenario: Edición exitosa preservando modalidad existente mediante id
+- **GIVEN** un evento existente con una modalidad numerada o general con un `id` conocido
+- **WHEN** se envía `PUT /eventos/{id}` enviando dicho `id` en la modalidad con nuevos datos de nombre o precio
+- **THEN** el sistema actualiza la modalidad conservando su UUID original y las relaciones con sus entidades hijas
+
+#### Scenario: Edición rechazada por modalidades con reservas o ventas asociadas
+- **GIVEN** un evento existente con una modalidad que posee al menos una reserva en cualquier estado (`activa`, `confirmada` o `liberada`)
 - **WHEN** se envía `PUT /eventos/{id}` omitiendo dicha modalidad del payload
 - **THEN** el sistema responde con código 409 Conflict y preserva el evento y sus modalidades sin cambios
 

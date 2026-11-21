@@ -13,17 +13,19 @@ Para soportar el flujo de compras orquestado ([ADR-0006](0006-flujo-de-compra-co
 1. **Ampliación de `modalidades` y distinción de tarifas:**
    - Para modalidad `general`: columna `precio NUMERIC(10, 2) NOT NULL` (tarifa única de la entrada general) y columna `cupo INTEGER NOT NULL` (capacidad total del evento para esa zona).
    - Para modalidad `numerado`: `precio` es `NULL` en la modalidad y se define a nivel de cada sector en `sectores.precio NUMERIC(10, 2) NOT NULL`, reflejando tarifas diferenciadas por ubicación física.
+   - En la migración `0002_add_inventario.py`, las columnas se añaden como anulables y se ejecuta un backfill de consistencia para registros preexistentes de migración `0001` (`precio = 0.00` y `cupo = 0` en general) previo a aplicar las restricciones de obligatoriedad.
 2. **Entidades para modalidad `numerado`:**
    - Crear tabla `sectores` vinculada a `modalidades` (`id UUID PK`, `modalidad_id FK`, `nombre VARCHAR(100)`, `precio NUMERIC(10, 2) NOT NULL`).
    - Crear tabla `asientos` vinculada a `sectores` (`id UUID PK`, `sector_id FK`, `fila VARCHAR(10)`, `numero INTEGER`, `estado VARCHAR(20)`, con restricción `UNIQUE (sector_id, fila, numero)` y `CHECK (estado IN ('libre', 'reservado', 'vendido'))`).
 3. **Entidad `reservas` en `events-service`:**
-   - Crear tabla `reservas` (`id UUID PK`, `modalidad_id FK`, `asiento_id FK NULL`, `estado VARCHAR(20) NOT NULL DEFAULT 'activa'`, `expira_en TIMESTAMPTZ NOT NULL`, `creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()`, con `CHECK (estado IN ('activa', 'confirmada', 'liberada'))`).
+   - Crear tabla `reservas` (`id UUID PK`, `modalidad_id FK`, `asiento_id FK NULL`, `estado VARCHAR(20) NOT NULL DEFAULT 'activa'`, `expira_en TIMESTAMPTZ NOT NULL`, `creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()`, `idempotency_key VARCHAR(255) NULL`, con `CHECK (estado IN ('activa', 'confirmada', 'liberada'))` e índices sobre `(modalidad_id, estado)` y `(modalidad_id, idempotency_key)`).
    - Para modalidad `general`: `asiento_id` es `NULL`; la disponibilidad se calcula como `cupo - COUNT(reservas vigentes)` donde vigente significa `estado = 'confirmada' OR (estado = 'activa' AND expira_en > NOW())`.
    - Para modalidad `numerado`: `asiento_id` referencia el asiento reservado y sincroniza su `estado`.
-4. **Protección contra borrado de ventas e integridad:**
-   - La eliminación o reemplazo de modalidades vía `PUT /eventos/{id}` está protegida: si una modalidad tiene reservas en estado `confirmada` o `activa`, el sistema rechaza la operación con `409 Conflict`. En la base de datos se utiliza restricción referencial que impida borrados silenciosos en cascada de transacciones comerciales.
+4. **Preservación de identidades y protección contra borrado en `PUT /eventos/{id}`:**
+   - El payload de modalidades admite `id: UUID` opcional. Si se envía un `id` existente del evento, se actualizan sus atributos preservando su identificador y relaciones hijas.
+   - La eliminación de modalidades preexistentes omitidas en `PUT /eventos/{id}` está condicionada: si una modalidad posee registros en `reservas` en cualquier estado (`activa`, `confirmada` o `liberada`), el sistema rechaza la operación con `409 Conflict`. En la base de datos se utiliza restricción referencial `ON DELETE RESTRICT` que impida borrados accidentales y garantice la auditoría histórica.
 5. **Ciclo de vida funcional de reservas:**
-   - Endpoints REST para consulta de disponibilidad (`GET .../disponibilidad`), creación de reserva (`POST .../reservas`), liberación (`DELETE .../reservas/{id}`) y confirmación (`POST .../reservas/{id}/confirmar`).
+   - Endpoints REST para consulta de disponibilidad (`GET .../disponibilidad`), creación de reserva (`POST .../reservas` con soporte de `Idempotency-Key`), liberación (`DELETE .../reservas/{id}`) y confirmación (`POST .../reservas/{id}/confirmar`).
 
 ## Consecuencias
 

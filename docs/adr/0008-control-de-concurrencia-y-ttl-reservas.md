@@ -18,20 +18,24 @@ Asimismo, de acuerdo con [ADR-0006](0006-flujo-de-compra-completo.md), las reser
    - Si `ocupadas >= cupo`, se aborta la transacción y se retorna inmediatamente `409 Conflict`. Caso contrario, se inserta la nueva reserva activa dentro de la misma transacción.
    - El lock a nivel de fila se retiene únicamente durante los milisegundos de la transacción de reserva de esa modalidad específica, sin contención sobre otros eventos ni modalidades.
 
-2. **Control de concurrencia para modalidad numerada (asientos individuales) y liberación perezosa:**
-   - Previo a la asignación o al computar disponibilidad, se ejecuta una liberación perezosa (lazy cleanup) dentro de la transacción:
-     `UPDATE reservas SET estado = 'liberada' WHERE modalidad_id = :mid AND estado = 'activa' AND expira_en <= NOW()`
-     restituyendo a su vez `asientos.estado = 'libre'` para los asientos asociados a esas reservas caducadas.
+2. **Control de concurrencia para modalidad numerada, liberación perezosa y orden canónico de bloqueos:**
+   - Previo a la asignación o al computar disponibilidad, se ejecuta una liberación perezosa (lazy cleanup) dentro de la transacción con **orden canónico de locks**:
+     1. Se bloquean las reservas activas vencidas (`SELECT ... FROM reservas WHERE modalidad_id = :mid AND estado = 'activa' AND expira_en <= NOW() FOR UPDATE`) y se transicionan a `liberada`.
+     2. Para cada reserva con `asiento_id`, se bloquea el asiento (`SELECT ... FROM asientos WHERE id = :asiento_id FOR UPDATE`), verificando que pertenezca a la reserva y su estado sea `reservado` antes de actualizar a `libre`.
    - La reserva efectiva se ejecuta con la sentencia atómica condicional:
      `UPDATE asientos SET estado = 'reservado' WHERE id = :asiento_id AND estado = 'libre'`
    - Si la sentencia afecta 0 filas, se responde `409 Conflict`.
 
-3. **Mecanismo de expiración por TTL (Time-To-Live):**
+3. **Mecanismo de expiración por TTL (Time-To-Live) e Idempotencia:**
    - Cada reserva se crea con `expira_en = NOW() + interval '10 minutes'` (configurable vía `RESERVA_TTL_MINUTES`).
+   - `POST .../reservas` admite cabecera opcional `Idempotency-Key` (hasta 255 caracteres): reintentos con la misma clave y payload equivalente retornan el `reserva_id` preexistente; si se reutiliza con datos divergentes responde `409 Conflict`.
    - En las consultas de disponibilidad y confirmación:
      - Disponibilidad contabiliza como libres los asientos que ya están `libre` o cuya reserva activa haya expirado.
-     - `POST .../confirmar` valida `expira_en > NOW()`. Si ya venció, se transiciona a `liberada` (restituyendo el asiento a `libre`) y se rechaza con `409 Conflict`.
+     - `POST .../confirmar` valida bajo lock de fila que `reserva.estado == 'activa'` y `expira_en > NOW()`. Si ya venció, se transiciona a `liberada` (restituyendo el asiento a `libre` solo si continúa asignado a esta) y se rechaza con `409 Conflict`.
      - Si la reserva ya se encontraba `confirmada`, se retorna `200 OK` garantizando idempotencia. Si se encontraba `liberada`, se rechaza con `409 Conflict`.
+
+4. **Coherencia y jerarquía de decisiones arquitectónicas:**
+   - Este ADR documenta la decisión definitiva, aceptada y vinculante para el control de concurrencia e inventario en `events-service`, dejando sin efecto cualquier mención preliminar en propuestas anteriores (como borradores iniciales de ADR-0006).
 
 ## Consecuencias
 

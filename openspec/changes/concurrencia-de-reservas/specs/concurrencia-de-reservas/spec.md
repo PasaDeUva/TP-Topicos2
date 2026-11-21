@@ -33,7 +33,7 @@ El sistema MUST garantizar la asignación exclusiva y atómica de cada asiento e
 - **THEN** el sistema responde con código 409 Conflict y el estado del asiento permanece inalterado
 
 ### Requirement: Control de tiempo de vida (TTL) y liberación perezosa
-El sistema SHALL asignar una fecha de vencimiento (`expira_en`) a cada reserva creada. Toda reserva activa cuyo `expira_en` sea anterior al instante de evaluación MUST ser considerada vencida. El sistema SHALL ejecutar una liberación perezosa de reservas activas vencidas restituyendo sus asientos a estado `libre` al evaluar disponibilidad o al recibir nuevos intentos de reserva, y MUST rechazar la confirmación de cualquier reserva expirada.
+El sistema SHALL asignar una fecha de vencimiento (`expira_en`) a cada reserva creada, considerando vencida a toda reserva activa cuyo TTL haya expirado. El sistema SHALL ejecutar una liberación perezosa de reservas activas vencidas restituyendo sus asientos a estado `libre` al evaluar disponibilidad o recibir nuevas reservas, aplicando orden canónico de locks (`reservas` y luego `asientos`) y comprobando pertenencia activa. El sistema MUST rechazar la confirmación de reservas expiradas.
 
 #### Scenario: Liberación perezosa de asiento vencido al intentar reservar
 - **GIVEN** un asiento numerado en estado `reservado` cuya reserva activa asociada superó su fecha de vencimiento (`expira_en`)
@@ -49,3 +49,8 @@ El sistema SHALL asignar una fecha de vencimiento (`expira_en`) a cada reserva c
 - **GIVEN** una reserva activa cuyo tiempo de vida (`expira_en`) ha expirado
 - **WHEN** se envía `POST .../reservas/{reserva_id}/confirmar`
 - **THEN** el sistema responde con código 409 Conflict, transiciona la reserva a `liberada` y no confirma la venta
+
+#### Scenario: Carrera entre confirmación y expiración concurrente
+- **GIVEN** una reserva activa en modalidad numerada cuyo TTL está al límite de expiración
+- **WHEN** concurren en paralelo la confirmación de la reserva y una nueva reserva que ejecuta liberación perezosa sobre ese asiento
+- **THEN** la operación que obtiene primero el lock sobre la fila de la reserva resuelve atómicamente; si la confirmación entra primero se consolida la venta y el asiento pasa a `vendido`, y si la liberación entra primero la reserva caduca a `liberada`, el asiento vuelve a `libre`, y la confirmación posterior responde 409 Conflict sin alterar el asiento reasignado

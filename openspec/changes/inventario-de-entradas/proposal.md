@@ -6,14 +6,14 @@
 
 ## What Changes
 
-- Agregar `precio` (para general) y `cupo` a `modalidades` en `events-service`, mediante la migración unificada `0002_add_inventario.py`.
+- Agregar `precio` (para general) y `cupo` a `modalidades` en `events-service`, mediante la migración unificada `0002_add_inventario.py`, aplicando backfill para preservar la consistencia con eventos preexistentes.
 - Modelar asientos numerados: nuevas tablas `sectores` (con precio por sector) y `asientos` con estado `libre / reservado / vendido`.
-- Crear tabla `reservas` con identificador `reserva_id`, vinculación a modalidad y asiento opcional, y marca de expiración `expira_en`.
-- Extender `POST /eventos` y `PUT /eventos/{id}` para aceptar precio y cupo en general, y sectores con precio y asientos en numerado. Proteger `PUT /eventos/{id}` rechazando con `409 Conflict` la eliminación de modalidades con reservas activas o confirmadas.
+- Crear tabla `reservas` con identificador `reserva_id`, vinculación a modalidad y asiento opcional, marca de expiración `expira_en`, y columna `idempotency_key` para garantizar reintentos seguros.
+- Extender `POST /eventos` y `PUT /eventos/{id}` para aceptar precio y cupo en general, y sectores con precio y asientos en numerado. En `PUT /eventos/{id}`, aceptar `id: UUID` opcional por modalidad para preservar identidades existentes; rechazar con `409 Conflict` la eliminación de modalidades que cuenten con historial de reservas (`activa`, `confirmada` o `liberada`).
 - Extender `GET /eventos/{id}` para exponer precio, cupo y, en modalidad numerada, sectores y asientos.
 - Nuevo endpoint `GET /eventos/{id}/modalidades/{mid}/disponibilidad`: devuelve cupo restante (general, considerando confirmadas y activas no vencidas) o cantidad de asientos libres (numerado).
-- Nuevos endpoints de ciclo de vida de reservas (con exclusión mutua detallada en el change complementario `concurrencia-de-reservas`):
-  - `POST /eventos/{id}/modalidades/{mid}/reservas` → reservar; devuelve `reserva_id`.
+- Nuevos endpoints de ciclo de vida de reservas (implementados y verificados conjuntamente con el change complementario `concurrencia-de-reservas`):
+  - `POST /eventos/{id}/modalidades/{mid}/reservas` → reservar con soporte opcional de cabecera `Idempotency-Key`; devuelve `reserva_id`.
   - `DELETE /eventos/{id}/modalidades/{mid}/reservas/{reserva_id}` → liberar (compensación ante pago fallido, 409 si ya no está activa).
   - `POST /eventos/{id}/modalidades/{mid}/reservas/{reserva_id}/confirmar` → confirmar venta (idempotente 200 si ya confirmada, 409 si liberada o expirada).
 

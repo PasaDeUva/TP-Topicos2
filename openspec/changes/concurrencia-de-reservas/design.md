@@ -22,10 +22,10 @@ Ver [proposal.md](./proposal.md) y [specs/concurrencia-de-reservas/spec.md](./sp
 
 ### 1. Atomicidad en modalidad numerada y Liberación Perezosa
 
-Al evaluar disponibilidad o intentar reservar en una modalidad numerada, se ejecuta primero una liberación perezosa transaccional de reservas caducadas:
+Al evaluar disponibilidad o intentar reservar en una modalidad numerada, se ejecuta una liberación perezosa transaccional de reservas caducadas siguiendo un **orden canónico de bloqueos** (`reservas` primero, `asientos` después) y verificando la pertenencia activa del asiento para no desasignar asientos ya reasignados:
 
 ```python
-# Liberación perezosa de reservas activas vencidas
+# 1. Liberación perezosa de reservas activas vencidas (Lock en reserva primero)
 vencidas = await session.scalars(
     select(Reserva).where(
         Reserva.modalidad_id == modalidad_id,
@@ -36,11 +36,14 @@ vencidas = await session.scalars(
 for r in vencidas:
     r.estado = "liberada"
     if r.asiento_id:
-        await session.execute(
-            update(Asiento).where(Asiento.id == r.asiento_id).values(estado="libre")
+        # Lock en asiento y verificación de pertenencia activa
+        asiento = await session.scalar(
+            select(Asiento).where(Asiento.id == r.asiento_id).with_for_update()
         )
+        if asiento and asiento.estado == "reservado":
+            asiento.estado = "libre"
 
-# Asignación atómica condicionada
+# 2. Asignación atómica condicionada
 stmt = (
     update(Asiento)
     .where(Asiento.id == payload.asiento_id, Asiento.estado == "libre")
@@ -53,7 +56,8 @@ if result.rowcount == 0:
 
 **Justificación:**
 - Garantiza que si una reserva expiró por TTL, su asiento vuelve a estar en estado `libre` para ser tomado inmediatamente por otra solicitud.
-- La sentencia atómica `WHERE estado = 'libre'` garantiza la exclusión mutua directa a nivel de motor PostgreSQL sin deadlocks.
+- El orden canónico de bloqueo (`reservas` -> `asientos`) previene *deadlocks* y asegura que una confirmación concurrente o una cancelación no modifiquen un asiento si la reserva ya no es su dueña legítima.
+- La sentencia atómica `WHERE estado = 'libre'` garantiza la exclusión mutua directa a nivel de motor PostgreSQL sin contención innecesaria.
 
 ### 2. Aislamiento y conteo de ocupación en modalidad general
 
@@ -86,17 +90,40 @@ if ocupadas >= modalidad.cupo:
 - Cada reserva se crea con `expira_en = datetime.now(timezone.utc) + timedelta(minutes=settings.reserva_ttl_minutes)`.
 - En la confirmación (`POST .../confirmar`):
   ```python
+  reserva = await session.scalar(
+      select(Reserva).where(Reserva.id == reserva_id).with_for_update()
+  )
+  if not reserva:
+      raise HTTPException(status_code=404, detail="not_found")
   if reserva.estado == "confirmada":
       return {"status": "confirmada"}
   if reserva.estado == "liberada":
       raise HTTPException(status_code=409, detail="reserva liberada")
   if reserva.expira_en <= datetime.now(timezone.utc):
       reserva.estado = "liberada"
-      if reserva.asiento:
-          reserva.asiento.estado = "libre"
+      if reserva.asiento_id:
+          asiento = await session.scalar(
+              select(Asiento).where(Asiento.id == reserva.asiento_id).with_for_update()
+          )
+          if asiento and asiento.estado == "reservado":
+              asiento.estado = "libre"
       await session.commit()
       raise HTTPException(status_code=409, detail="reserva expirada")
+
+  reserva.estado = "confirmada"
+  if reserva.asiento_id:
+      asiento = await session.scalar(
+          select(Asiento).where(Asiento.id == reserva.asiento_id).with_for_update()
+      )
+      asiento.estado = "vendido"
+  await session.commit()
+  return {"status": "confirmada"}
   ```
+
+### 4. Coherencia de ADRs y entrega conjunta
+
+- **Prevalencia de ADR-0008:** ADR-0008 (aceptado) fija la estrategia definitiva y vinculante de control de concurrencia para `events-service` (`SELECT ... FOR UPDATE` por modalidad en general y actualización condicional en numerada), dejando sin efecto la alternativa preliminar descartada en el borrador previo de ADR-0006.
+- **Implementación conjunta:** `concurrencia-de-reservas` e `inventario-de-entradas` forman parte del mismo ciclo de entrega de `events-service` y se implementan conjuntamente bajo la migración `0002_add_inventario.py`.
 
 ## Risks / Trade-offs
 
