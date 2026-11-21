@@ -51,6 +51,17 @@ services:
       mock-service:
         condition: service_started
 
+  web-app:
+    build:
+      context: ./frontend/web-app
+    environment:
+      VITE_IDENTITY_ORIGIN: ${VITE_IDENTITY_ORIGIN:-}
+    ports:
+      - "${WEB_APP_HOST_PORT:-5174}:5174"
+    depends_on:
+      identity-service:
+        condition: service_healthy
+
   events-db:
     image: postgres:16-alpine
     environment:

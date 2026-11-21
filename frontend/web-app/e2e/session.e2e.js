@@ -1,0 +1,140 @@
+import { test, expect } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+
+test("register, restore concurrently and propagate logout across tabs", async ({ context, page, request }) => {
+  const email = `${randomUUID()}@example.com`;
+  await page.goto("/");
+  await page.getByRole("button", { name: "Crear cuenta" }).click();
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Contraseña").fill("password123");
+  await page.getByRole("button", { name: "Registrarse" }).click();
+  await expect(page.getByRole("status")).toContainText("Cuenta creada");
+  await page.getByLabel("Contraseña").fill("password123");
+  const loginResponse = page.waitForResponse((response) => response.url().endsWith("/auth/web/login") && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Ingresar" }).click();
+  if (process.env.E2E_EXPECT_IDENTITY_ORIGIN) expect(new URL((await loginResponse).url()).origin).toBe(process.env.E2E_EXPECT_IDENTITY_ORIGIN);
+  else await loginResponse;
+  await expect(page.getByText(`Email: ${email}`)).toBeVisible();
+  await expect(page.getByText("cliente: activo")).toBeVisible();
+  await page.getByRole("button", { name: "Solicitar rol organizador" }).click();
+  await expect(page.getByText("organizador: pendiente")).toBeVisible();
+  const accountId = (await page.getByText(/^Identificador:/).textContent()).replace("Identificador: ", "");
+  const identityUrl = process.env.E2E_IDENTITY_URL ?? "http://localhost:18002";
+  const admin = await request.post(`${identityUrl}/auth/login`, { data: { email: "admin@example.com", password: "local-admin-password" } });
+  expect(admin.ok()).toBeTruthy();
+  const adminToken = (await admin.json()).access_token;
+  const disabled = await request.patch(`${identityUrl}/admin/organizers/${accountId}/status`, {
+    headers: { Authorization: `Bearer ${adminToken}` }, data: { status: "deshabilitado" },
+  });
+  expect(disabled.ok()).toBeTruthy();
+  await page.reload();
+  await expect(page.getByText("organizador: deshabilitado")).toBeVisible();
+  await expect(page.getByText("cliente: activo")).toBeVisible();
+  const cookie = (await context.cookies()).find((item) => item.name === "identity_refresh");
+  expect(cookie).toMatchObject({ httpOnly: true, sameSite: "Strict", secure: false, path: "/auth/web" });
+  const storage = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
+  expect(storage).not.toContain(cookie.value);
+  const second = await context.newPage();
+  await second.goto("/");
+  await expect(second.getByText(`Email: ${email}`)).toBeVisible();
+  await expect(second.getByText("organizador: deshabilitado")).toBeVisible();
+  await Promise.all([page.reload(), second.reload()]);
+  await expect(page.getByText(`Email: ${email}`)).toBeVisible();
+  await expect(second.getByText(`Email: ${email}`)).toBeVisible();
+  await page.getByRole("button", { name: "Cerrar sesión" }).click();
+  await expect(page.getByText("Sesión cerrada.")).toBeVisible();
+  await expect(second.getByText("La sesión no es válida. Inicie sesión nuevamente.")).toBeVisible();
+  await expect(second.getByText(`Email: ${email}`)).toHaveCount(0);
+  expect((await context.cookies()).some((item) => item.name === "identity_refresh")).toBe(false);
+  const nextEmail = `${randomUUID()}@example.com`;
+  await page.getByRole("button", { name: "Crear cuenta" }).click();
+  await page.getByLabel("Email").fill(nextEmail);
+  await page.getByLabel("Contraseña").fill("password123");
+  await page.getByRole("button", { name: "Registrarse" }).click();
+  await expect(page.getByRole("status")).toContainText("Cuenta creada");
+  await page.getByLabel("Contraseña").fill("password123");
+  await page.getByRole("button", { name: "Ingresar" }).click();
+  await expect(page.getByText(`Email: ${nextEmail}`)).toBeVisible();
+  await expect(page.getByText(`Email: ${email}`)).toHaveCount(0);
+  await expect(second.getByText(`Email: ${email}`)).toHaveCount(0);
+});
+
+test("fails closed if browser session locking is unavailable", async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(navigator, "locks", { value: undefined }));
+  let mutations = 0;
+  page.on("request", (request) => {
+    if (["/auth/web/login", "/auth/web/refresh", "/auth/web/logout"].some((path) => request.url().endsWith(path))) mutations += 1;
+  });
+  await page.goto("/");
+  await expect(page.getByText("No se pudo restaurar la sesión. Inicie sesión nuevamente.")).toBeVisible();
+  await page.getByLabel("Email").fill("user@example.com");
+  await page.getByLabel("Contraseña").fill("password123");
+  await page.getByRole("button", { name: "Ingresar" }).click();
+  await expect(page.getByRole("alert")).toBeVisible();
+  expect(mutations).toBe(0);
+});
+
+test("a lost refresh response prevents blind retries in another tab", async ({ context, page }) => {
+  const email = `${randomUUID()}@example.com`;
+  await page.goto("/");
+  await page.getByRole("button", { name: "Crear cuenta" }).click();
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Contraseña").fill("password123");
+  await page.getByRole("button", { name: "Registrarse" }).click();
+  await expect(page.getByRole("status")).toContainText("Cuenta creada");
+  await page.getByLabel("Contraseña").fill("password123");
+  await page.getByRole("button", { name: "Ingresar" }).click();
+  await expect(page.getByText(`Email: ${email}`)).toBeVisible();
+  const second = await context.newPage();
+  await second.goto("/");
+  await expect(second.getByText(`Email: ${email}`)).toBeVisible();
+  let refreshes = 0;
+  await context.route("**/auth/web/refresh", async (route) => {
+    refreshes += 1;
+    await route.fetch();
+    await route.abort("failed");
+  });
+  await page.reload();
+  await expect(page.getByText("No se pudo restaurar la sesión. Inicie sesión nuevamente.")).toBeVisible();
+  await expect(second.getByText("La sesión no es válida. Inicie sesión nuevamente.")).toBeVisible();
+  await second.reload();
+  await expect(second.getByText("No se pudo restaurar la sesión. Inicie sesión nuevamente.")).toBeVisible();
+  expect(refreshes).toBe(1);
+});
+
+test("logout propagates while a different tab has a refresh in flight", async ({ context, page }) => {
+  const email = `${randomUUID()}@example.com`;
+  await page.goto("/");
+  await page.getByRole("button", { name: "Crear cuenta" }).click();
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Contraseña").fill("password123");
+  await page.getByRole("button", { name: "Registrarse" }).click();
+  await expect(page.getByRole("status")).toContainText("Cuenta creada");
+  await page.getByLabel("Contraseña").fill("password123");
+  await page.getByRole("button", { name: "Ingresar" }).click();
+  await expect(page.getByText(`Email: ${email}`)).toBeVisible();
+  const second = await context.newPage();
+  const third = await context.newPage();
+  await second.goto("/");
+  await expect(second.getByText(`Email: ${email}`)).toBeVisible();
+  await third.goto("/");
+  await expect(third.getByText(`Email: ${email}`)).toBeVisible();
+  let release;
+  let markStarted;
+  const started = new Promise((resolve) => { markStarted = resolve; });
+  const gate = new Promise((resolve) => { release = resolve; });
+  await page.route("**/auth/web/refresh", async (route) => {
+    const response = await route.fetch();
+    markStarted();
+    await gate;
+    await route.fulfill({ response });
+  });
+  await page.reload();
+  await started;
+  await second.getByRole("button", { name: "Cerrar sesión" }).click();
+  await expect(third.getByText("La sesión no es válida. Inicie sesión nuevamente.")).toBeVisible();
+  await expect(third.getByText(`Email: ${email}`)).toHaveCount(0);
+  release();
+  await expect(second.getByText("Sesión cerrada.")).toBeVisible();
+  await expect(page.getByText(`Email: ${email}`)).toHaveCount(0);
+});
