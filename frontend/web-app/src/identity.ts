@@ -2,6 +2,8 @@ export type Role = "cliente" | "organizador";
 export type WebSession = { access_token: string; csrf_token: string; expires_in: number };
 export type RoleAssignment = { role: string; status: string };
 export type Account = { account_id: string; email: string; roles: RoleAssignment[] };
+export type Organizer = { account_id: string; email: string; status: string };
+export type OrganizerStatus = "habilitado" | "deshabilitado";
 
 export class IdentityError extends Error {
   constructor(public readonly status: number) {
@@ -64,6 +66,20 @@ export async function getAccount(token: string, signal: AbortSignal): Promise<Ac
   const response = await fetch(identityUrl("/auth/me"), { credentials: "include", headers: { Authorization: `Bearer ${token}` }, signal });
   if (!response.ok) throw new IdentityError(response.status);
   return response.json() as Promise<Account>;
+}
+
+export async function getOrganizers(token: string, signal: AbortSignal): Promise<Organizer[]> {
+  const response = await fetch(identityUrl("/admin/organizers"), { credentials: "include", headers: { Authorization: `Bearer ${token}` }, signal });
+  if (!response.ok) throw new IdentityError(response.status);
+  return response.json() as Promise<Organizer[]>;
+}
+
+export async function setOrganizerStatus(token: string, id: string, status: OrganizerStatus): Promise<{ account_id: string; status: OrganizerStatus }> {
+  const response = await fetch(identityUrl(`/admin/organizers/${encodeURIComponent(id)}/status`), {
+    method: "PATCH", credentials: "include", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ status }),
+  });
+  if (!response.ok) throw new IdentityError(response.status);
+  return response.json() as Promise<{ account_id: string; status: OrganizerStatus }>;
 }
 
 export async function requestRole(token: string, role: Role): Promise<RoleAssignment[]> {

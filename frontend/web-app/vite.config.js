@@ -8,6 +8,6 @@ export default defineConfig({
     port: 5174,
     strictPort: true,
     cors: false,
-    proxy: { "/auth": { target: "http://identity-service:8000" } },
+    proxy: { "/auth": { target: "http://identity-service:8000" }, "/admin": { target: "http://identity-service:8000" } },
   },
 });

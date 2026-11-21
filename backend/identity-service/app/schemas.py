@@ -77,6 +77,12 @@ class OrganizerStatusOut(BaseModel):
     status: Literal["habilitado", "deshabilitado"]
 
 
+class OrganizerOut(BaseModel):
+    account_id: UUID
+    email: EmailStr
+    status: str
+
+
 class ErrorOut(BaseModel):
     code: str
     message: str

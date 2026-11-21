@@ -1,6 +1,8 @@
 # Cliente web de acceso y cuenta
 
-La aplicación permite registrar cuentas, iniciar sesión, consultar roles y solicitar el rol faltante. Compose conecta `/auth` con Identity mediante un proxy del mismo origen.
+La aplicación permite registrar cuentas, iniciar sesión, consultar roles y solicitar el rol faltante. Compose conecta `/auth` y `/admin` con Identity mediante un proxy del mismo origen.
+
+Una cuenta con rol administrador activo puede consultar los organizadores desde su cuenta y habilitar o deshabilitar cada rol. Si la operación no puede confirmarse, la interfaz consulta nuevamente el estado antes de mostrarlo. El acceso se comprueba también en Identity.
 
 ## Arranque local
 

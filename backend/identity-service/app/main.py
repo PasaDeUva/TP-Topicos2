@@ -18,7 +18,7 @@ from app.models import ACCOUNT_EMAIL_CONSTRAINT, Account, RoleAssignment
 from app.observability import request_log
 from app.schemas import (
     AccountOut, AccountRolesOut, CsrfOut, ErrorOut, Login, OrganizerStatus, OrganizerStatusOut,
-    PASSWORD_MIN_LENGTH, RefreshRequest, Registration, RoleOut, RoleRequest, RolesOut, TokenOut, WebLoginOut, WebTokenOut,
+    PASSWORD_MIN_LENGTH, RefreshRequest, Registration, RoleOut, RoleRequest, RolesOut, TokenOut, WebLoginOut, WebTokenOut, OrganizerOut,
 )
 from app.service_auth import authorize_service
 from app.sessions import locked_refresh_session, revoke_session, rotate_session, start_session
@@ -221,6 +221,20 @@ def get_me(account: Account = Depends(current_account), session: Session = Depen
         email=account.email,
         roles=[RoleOut(role=role.role, status=role.status) for role in roles],
     )
+
+
+@app.get("/admin/organizers", response_model=list[OrganizerOut], responses={401: {"model": ErrorOut}, 403: {"model": ErrorOut}})
+def list_organizers(account: Account = Depends(current_account), session: Session = Depends(get_session)):
+    admin = session.scalar(select(RoleAssignment.id).where(RoleAssignment.account_id == account.id, RoleAssignment.role == "administrador", RoleAssignment.status == "activo"))
+    if admin is None:
+        raise HTTPException(status_code=403, detail="forbidden")
+    rows = session.execute(
+        select(Account.id, Account.email, RoleAssignment.status)
+        .join(RoleAssignment, RoleAssignment.account_id == Account.id)
+        .where(RoleAssignment.role == "organizador")
+        .order_by(Account.email, Account.id)
+    ).all()
+    return [{"account_id": row.id, "email": row.email, "status": row.status} for row in rows]
 
 
 @app.patch("/admin/organizers/{account_id}/status", response_model=OrganizerStatusOut, responses={400: {"model": ErrorOut}, 401: {"model": ErrorOut}, 403: {"model": ErrorOut}, 404: {"model": ErrorOut}})

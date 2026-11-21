@@ -231,6 +231,21 @@ def test_web_cors_only_allows_configured_origins(client, monkeypatch):
     assert client.options("/auth/web/login", headers=headers).status_code == 400
 
 
+def test_admin_patch_cors_preflight_restricts_origin(client, monkeypatch):
+    monkeypatch.setenv("IDENTITY_ENV", "production")
+    monkeypatch.setenv("IDENTITY_WEB_ORIGINS", "https://app.example.com")
+    monkeypatch.setenv("IDENTITY_WEB_CSRF_SECRET", "x" * 32)
+    monkeypatch.delenv("IDENTITY_WEB_ALLOW_LOCAL_HTTP", raising=False)
+    headers = {"Origin": "https://app.example.com", "Access-Control-Request-Method": "PATCH", "Access-Control-Request-Headers": "authorization,content-type"}
+    response = client.options(f"/admin/organizers/{uuid.uuid4()}/status", headers=headers)
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == headers["Origin"]
+    headers["Origin"] = "https://evil.example.com"
+    response = client.options(f"/admin/organizers/{uuid.uuid4()}/status", headers=headers)
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
+
+
 def test_web_csrf_restores_without_rotation_and_rejects_invalid_session(client, monkeypatch):
     monkeypatch.setenv("IDENTITY_ENV", "production")
     monkeypatch.setenv("IDENTITY_WEB_ORIGINS", "https://app.example.com")
@@ -437,6 +452,46 @@ def test_initialize_and_recover_admin(client):
     assert client.post("/auth/refresh", json={"refresh_token": user_login.json()["refresh_token"]}).status_code == 200
     assert client.post("/auth/login", json={"email": email, "password": "first-password"}).status_code == 401
     assert client.post("/auth/login", json={"email": email, "password": "recovered-password"}).status_code == 200
+
+
+def test_admin_lists_organizers_with_minimal_data_and_stable_order(client):
+    db = app.dependency_overrides[get_session]()
+    email = f"{uuid.uuid4()}@example.com"
+    assert initialize_admin(db, email, "admin-password") is True
+    db.commit()
+    token = client.post("/auth/login", json={"email": email, "password": "admin-password"}).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.get("/admin/organizers", headers=headers).json() == []
+    expected = []
+    for status in ("pendiente", "habilitado", "deshabilitado"):
+        address = f"{uuid.uuid4()}@example.com"
+        account = create_account(db, address, "password123")
+        db.add(RoleAssignment(account_id=account.id, role="organizador", status=status))
+        db.flush()
+        expected.append({"account_id": str(account.id), "email": address, "status": status})
+    db.commit()
+    response = client.get("/admin/organizers", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == sorted(expected, key=lambda item: (item["email"], item["account_id"]))
+
+
+def test_admin_list_rejects_invalid_and_revoked_authority(client):
+    db = app.dependency_overrides[get_session]()
+    email = f"{uuid.uuid4()}@example.com"
+    assert initialize_admin(db, email, "admin-password") is True
+    db.commit()
+    token = client.post("/auth/login", json={"email": email, "password": "admin-password"}).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.get("/admin/organizers").status_code == 401
+    assert client.get("/admin/organizers", headers={"Authorization": "Bearer invalid"}).status_code == 401
+    user_email = f"{uuid.uuid4()}@example.com"
+    client.post("/auth/register", json={"email": user_email, "password": "password123", "role": "cliente"})
+    user_token = client.post("/auth/login", json={"email": user_email, "password": "password123"}).json()["access_token"]
+    assert client.get("/admin/organizers", headers={"Authorization": f"Bearer {user_token}"}).status_code == 403
+    role = db.scalar(select(RoleAssignment).where(RoleAssignment.role == "administrador"))
+    role.status = "deshabilitado"
+    db.commit()
+    assert client.get("/admin/organizers", headers=headers).status_code == 403
 
 
 def test_admin_changes_organizer_without_affecting_client(client):

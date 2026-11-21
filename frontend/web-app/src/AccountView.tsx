@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getAccount, IdentityError, requestRole, type Account, type Role } from "./identity";
+import OrganizerAdmin from "./OrganizerAdmin";
 
 type Props = { token: string; onInvalidSession: () => void };
 
@@ -78,6 +79,7 @@ export default function AccountView({ token, onInvalidSession }: Props) {
         <button className="button button-secondary" key={role} disabled={busy} onClick={() => void addRole(role)}>Solicitar rol {role}</button>,
       )}
       </div>
+      {account.roles.some((item) => item.role === "administrador" && item.status === "activo") && <OrganizerAdmin token={token} onInvalidSession={onInvalidSession} />}
     </>}
   </section>;
 }

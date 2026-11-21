@@ -6,6 +6,22 @@ import AccountView from "../src/AccountView";
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("account roles", () => {
+  it("shows administration only to an active administrator", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ account_id: "123", email: "admin@example.com", roles: [{ role: "administrador", status: "activo" }] }) }).mockResolvedValueOnce({ ok: true, json: async () => [] });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AccountView token="token" onInvalidSession={vi.fn()} />);
+    expect(await screen.findByRole("heading", { name: "Administrar organizadores" })).toBeTruthy();
+    expect(await screen.findByText(/No hay organizadores/)).toBeTruthy();
+  });
+
+  it("does not request the administrative list for a client", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ account_id: "123", email: "user@example.com", roles: [{ role: "cliente", status: "activo" }] }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AccountView token="token" onInvalidSession={vi.fn()} />);
+    expect(await screen.findByText("cliente: activo")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Administrar organizadores" })).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
   it("shows progress while requesting a role and the resulting status", async () => {
     let finish!: (value: object) => void;
     vi.stubGlobal("fetch", vi.fn()

@@ -57,8 +57,9 @@ Con el servicio iniciado:
 
 1. `POST /auth/register` con email, contraseña y rol `organizador` devuelve `201` y el rol `pendiente`.
 2. `POST /auth/login` devuelve `200`, un JWT y una credencial de renovación. `POST /auth/refresh` devuelve nuevas credenciales; reutilizar la anterior revoca la sesión.
-3. Un administrador autenticado usa `PATCH /admin/organizers/{account_id}/status` con `{"status":"habilitado"}` y recibe `200`.
-4. Un servicio autorizado consulta `GET /internal/accounts/{account_id}/roles` y recibe el estado actualizado. `POST /auth/logout` revoca la renovación y devuelve `204`.
+3. Un administrador activo consulta `GET /admin/organizers` con su token Bearer y recibe una lista ordenada por email e identificador con `account_id`, `email` y `status`. Sin token válido recibe `401`; sin rol administrador activo recibe `403`. La respuesta no incluye contraseñas ni credenciales.
+4. Un administrador autenticado usa `PATCH /admin/organizers/{account_id}/status` con `{"status":"habilitado"}` y recibe `200`.
+5. Un servicio autorizado consulta `GET /internal/accounts/{account_id}/roles` y recibe el estado actualizado. `POST /auth/logout` revoca la renovación y devuelve `204`.
 
 Las rutas, estructuras y errores completos están en el diseño de `openspec/changes/gestion-de-accesos/design.md`. La validación que deberán aplicar los consumidores está en [CONSUMERS.md](CONSUMERS.md).
 

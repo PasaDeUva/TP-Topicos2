@@ -1,7 +1,18 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { getAccount, login, logoutSession, readCsrf, refreshSession, register, requestRole } from "../src/identity";
+import { getAccount, getOrganizers, setOrganizerStatus, login, logoutSession, readCsrf, refreshSession, register, requestRole } from "../src/identity";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
+it("sends organizer operations with the access token and propagates authorization errors", async () => {
+  const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => [] }).mockResolvedValueOnce({ ok: true, json: async () => ({ account_id: "id", status: "habilitado" }) }).mockResolvedValueOnce({ ok: false, status: 403 });
+  vi.stubGlobal("fetch", fetchMock);
+  const signal = new AbortController().signal;
+  await getOrganizers("token", signal);
+  await setOrganizerStatus("token", "id", "habilitado");
+  await expect(getOrganizers("token", signal)).rejects.toMatchObject({ status: 403 });
+  expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe("Bearer token");
+  expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: "PATCH", headers: { Authorization: "Bearer token" }, body: JSON.stringify({ status: "habilitado" }) });
+});
 
 it("sends all Identity operations to the configured origin with credentials", async () => {
   vi.stubEnv("VITE_IDENTITY_ORIGIN", "https://identity.example.com");
