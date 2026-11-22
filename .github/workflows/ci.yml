@@ -82,3 +82,15 @@ jobs:
 
       - name: Test frontend
         run: docker compose run --rm --no-deps mock-app npm test
+
+      - name: Lint web application
+        run: docker compose run --rm --no-deps web-app npm run lint
+
+      - name: Typecheck web application
+        run: docker compose run --rm --no-deps web-app npm run typecheck
+
+      - name: Test web application
+        run: docker compose run --rm --no-deps web-app npm test
+
+      - name: Build web application
+        run: docker compose run --rm --no-deps web-app npm run build
