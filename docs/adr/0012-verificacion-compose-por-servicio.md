@@ -1,6 +1,6 @@
-# ADR-0010: Verificación de caja negra con Compose en cada servicio
+# ADR-0012: Verificación de caja negra con Compose en cada servicio
 
-- Estado: Propuesto
+- Estado: Aceptado
 - Fecha: 2026-11-21
 
 ## Contexto
