@@ -24,7 +24,7 @@ def start_session(session: Session, email: str, password: str):
     session.flush()
     refresh_token = secrets.token_urlsafe(32)
     session.add(RefreshCredential(session_id=login_session.id, secret_hash=hashlib.sha256(refresh_token.encode()).hexdigest(), consumed=False))
-    access_token, expires_in = issue_access_token(account.id, login_session.expires_at)
+    access_token, expires_in = issue_access_token(account.id, login_session.id, login_session.expires_at)
     session.commit()
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "Bearer", "expires_in": expires_in}
 
@@ -59,7 +59,7 @@ def rotate_session(session: Session, refresh_token: str):
     session.flush()
     new_token = secrets.token_urlsafe(32)
     session.add(RefreshCredential(session_id=login_session.id, secret_hash=hashlib.sha256(new_token.encode()).hexdigest(), consumed=False))
-    access_token, expires_in = issue_access_token(login_session.account_id, login_session.expires_at)
+    access_token, expires_in = issue_access_token(login_session.account_id, login_session.id, login_session.expires_at)
     session.commit()
     return {"access_token": access_token, "refresh_token": new_token, "token_type": "Bearer", "expires_in": expires_in}
 

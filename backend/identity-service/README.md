@@ -23,13 +23,15 @@ Para recuperar la contraseña del administrador configurado, ejecutar en una ter
 docker compose exec identity-service python -m app.admin recover
 ```
 
-La recuperación revoca las sesiones de ese administrador y sus credenciales de renovación. Los JWT de acceso ya emitidos pueden seguir siendo válidos hasta su vencimiento.
+La recuperación revoca las sesiones de ese administrador y sus credenciales de renovación. Identity rechaza inmediatamente los JWT de acceso asociados a esas sesiones. Los futuros consumidores deben consultar el estado de la sesión; la verificación local por sí sola no permite detectar la revocación.
 
 Las contraseñas nuevas deben tener al menos 8 caracteres.
 
 ## Sesión web
 
 Identity ofrece `POST /auth/web/login`, `GET /auth/web/csrf`, `POST /auth/web/refresh` y `POST /auth/web/logout`. La credencial de renovación se entrega en una cookie HttpOnly; la renovación y el cierre requieren el origen permitido y el token CSRF. Los endpoints JSON existentes conservan su contrato. El diseño se documenta en [ADR-0009](../../docs/adr/0009-sesion-web-identity.md).
+
+Los tokens de acceso se vinculan a la sesión y se rechazan tras su cierre. Al activar este cambio se rechazan JWT anteriores sin identificador de sesión; las personas afectadas pueden necesitar iniciar sesión de nuevo. La verificación interna para futuros consumidores se describe en [CONSUMERS.md](CONSUMERS.md) y la decisión propuesta en [ADR-0011](../../docs/adr/0011-revocacion-inmediata-sesiones.md).
 
 Para habilitar estas rutas, configurar un único origen de frontend en `IDENTITY_WEB_ORIGINS` y un secreto estable y aleatorio de al menos 32 bytes en `IDENTITY_WEB_CSRF_SECRET`. Fuera de desarrollo local se requiere HTTPS. Compose permite habilitar la excepción HTTP local mediante `IDENTITY_WEB_ALLOW_LOCAL_HTTP=true`; con `false` la cookie usa `Secure`. Si la configuración web está incompleta, las rutas web devuelven `503` y los endpoints JSON permanecen disponibles.
 
@@ -57,8 +59,9 @@ Con el servicio iniciado:
 
 1. `POST /auth/register` con email, contraseña y rol `organizador` devuelve `201` y el rol `pendiente`.
 2. `POST /auth/login` devuelve `200`, un JWT y una credencial de renovación. `POST /auth/refresh` devuelve nuevas credenciales; reutilizar la anterior revoca la sesión.
-3. Un administrador autenticado usa `PATCH /admin/organizers/{account_id}/status` con `{"status":"habilitado"}` y recibe `200`.
-4. Un servicio autorizado consulta `GET /internal/accounts/{account_id}/roles` y recibe el estado actualizado. `POST /auth/logout` revoca la renovación y devuelve `204`.
+3. Un administrador activo consulta `GET /admin/organizers` con su token Bearer y recibe una lista ordenada por email e identificador con `account_id`, `email` y `status`. Sin token válido recibe `401`; sin rol administrador activo recibe `403`. La respuesta no incluye contraseñas ni credenciales.
+4. Un administrador autenticado usa `PATCH /admin/organizers/{account_id}/status` con `{"status":"habilitado"}` y recibe `200`.
+5. Un servicio autorizado consulta `GET /internal/accounts/{account_id}/roles` y recibe el estado actualizado. `POST /auth/logout` revoca la renovación y devuelve `204`.
 
 Las rutas, estructuras y errores completos están en el diseño de `openspec/changes/gestion-de-accesos/design.md`. La validación que deberán aplicar los consumidores está en [CONSUMERS.md](CONSUMERS.md).
 

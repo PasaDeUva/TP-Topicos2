@@ -36,6 +36,14 @@ class RefreshRequest(BaseModel):
     refresh_token: str = Field(min_length=1)
 
 
+class SessionVerifyRequest(BaseModel):
+    access_token: str = Field(min_length=1)
+
+
+class SessionVerifyOut(BaseModel):
+    account_id: UUID
+
+
 class OrganizerStatus(BaseModel):
     status: Literal["habilitado", "deshabilitado"]
 
@@ -75,6 +83,12 @@ class AccountRolesOut(RolesOut):
 class OrganizerStatusOut(BaseModel):
     account_id: UUID
     status: Literal["habilitado", "deshabilitado"]
+
+
+class OrganizerOut(BaseModel):
+    account_id: UUID
+    email: EmailStr
+    status: str
 
 
 class ErrorOut(BaseModel):

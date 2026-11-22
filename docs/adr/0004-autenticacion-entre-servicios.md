@@ -3,6 +3,8 @@
 - Estado: Aceptado
 - Fecha: 2026-11-13
 
+La decisión sobre la validez de JWT después del cierre de sesión fue reemplazada por [ADR-0011](0011-revocacion-inmediata-sesiones.md). Las demás decisiones de este ADR permanecen vigentes. El texto siguiente se conserva como registro histórico.
+
 ## Contexto
 
 Identity debe acreditar la identidad de una persona ante los servicios de Eventos y Compras. Los permisos de organizador pueden cambiar durante una sesión, por lo que una credencial emitida previamente no debe considerarse una fuente suficiente del estado actual de ese rol.
