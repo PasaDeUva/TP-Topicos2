@@ -1,6 +1,6 @@
 # ADR-0005: `compras-service` consulta `events-service` de forma síncrona e idempotencia por clave
 
-- Estado: Propuesto
+- Estado: Aceptado
 - Fecha: 2026-11-18
 
 ## Contexto
