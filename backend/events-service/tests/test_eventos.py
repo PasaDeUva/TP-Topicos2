@@ -72,7 +72,11 @@ async def test_crear_evento_failsWhenSinModalidades(client: AsyncClient):
 async def test_crear_evento_failsWhenModalidadNombreDemasiadoLargo(
     client: AsyncClient,
 ):
-    payload = evento_payload(modalidades=[{"nombre": "M" * 101, "tipo": "general"}])
+    payload = evento_payload(
+        modalidades=[
+            {"nombre": "M" * 101, "tipo": "general", "precio": "100.00", "cupo": 10}
+        ]
+    )
 
     response = await client.post("/eventos", json=payload)
 
@@ -172,7 +176,14 @@ async def test_editar_evento_success(client: AsyncClient):
         "/eventos",
         json=evento_payload(
             nombre="Original",
-            modalidades=[{"nombre": "Campo", "tipo": "general"}],
+            modalidades=[
+                {
+                    "nombre": "Campo",
+                    "tipo": "general",
+                    "precio": "1500.00",
+                    "cupo": 50,
+                }
+            ],
         ),
     )
     evento_id = r.json()["id"]
@@ -180,8 +191,20 @@ async def test_editar_evento_success(client: AsyncClient):
     nuevo_payload = evento_payload(
         nombre="Actualizado",
         modalidades=[
-            {"nombre": "Platea", "tipo": "numerado"},
-            {"nombre": "VIP", "tipo": "numerado"},
+            {
+                "nombre": "Platea",
+                "tipo": "numerado",
+                "sectores": [
+                    {
+                        "nombre": "Sector A",
+                        "precio": "2500.00",
+                        "asientos": [
+                            {"fila": "1", "numero": 1},
+                            {"fila": "1", "numero": 2},
+                        ],
+                    }
+                ],
+            },
         ],
     )
     response = await client.put(f"/eventos/{evento_id}", json=nuevo_payload)
@@ -189,10 +212,86 @@ async def test_editar_evento_success(client: AsyncClient):
     assert response.status_code == 200
     data = response.json()
     assert data["nombre"] == "Actualizado"
-    # Las modalidades anteriores se reemplazaron
-    assert len(data["modalidades"]) == 2
-    tipos = {m["tipo"] for m in data["modalidades"]}
-    assert tipos == {"numerado"}
+    assert len(data["modalidades"]) == 1
+    assert data["modalidades"][0]["tipo"] == "numerado"
+    assert len(data["modalidades"][0]["sectores"]) == 1
+    assert len(data["modalidades"][0]["sectores"][0]["asientos"]) == 2
+
+
+async def test_editar_evento_preservaModalidadPorId(client: AsyncClient):
+    r = await client.post(
+        "/eventos",
+        json=evento_payload(
+            nombre="Original",
+            modalidades=[
+                {
+                    "nombre": "Campo",
+                    "tipo": "general",
+                    "precio": "1000.00",
+                    "cupo": 20,
+                }
+            ],
+        ),
+    )
+    evento_id = r.json()["id"]
+    modalidad_id = r.json()["modalidades"][0]["id"]
+
+    nuevo_payload = evento_payload(
+        nombre="Editado",
+        modalidades=[
+            {
+                "id": modalidad_id,
+                "nombre": "Campo VIP",
+                "tipo": "general",
+                "precio": "1200.00",
+                "cupo": 25,
+            }
+        ],
+    )
+    response = await client.put(f"/eventos/{evento_id}", json=nuevo_payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["modalidades"][0]["id"] == modalidad_id
+    assert data["modalidades"][0]["nombre"] == "Campo VIP"
+    assert float(data["modalidades"][0]["precio"]) == 1200.00
+    assert data["modalidades"][0]["cupo"] == 25
+
+
+async def test_editar_evento_failsWhenModalidadOmitidaTieneReservas(client: AsyncClient):
+    r = await client.post(
+        "/eventos",
+        json=evento_payload(
+            modalidades=[
+                {
+                    "nombre": "General",
+                    "tipo": "general",
+                    "precio": "500.00",
+                    "cupo": 10,
+                }
+            ]
+        ),
+    )
+    evento_id = r.json()["id"]
+    modalidad_id = r.json()["modalidades"][0]["id"]
+
+    # Crear una reserva en esa modalidad
+    r_res = await client.post(f"/eventos/{evento_id}/modalidades/{modalidad_id}/reservas")
+    assert r_res.status_code == 201
+
+    # Intentar editar el evento omitiendo la modalidad con reservas
+    nuevo_payload = evento_payload(
+        modalidades=[
+            {
+                "nombre": "Nueva General",
+                "tipo": "general",
+                "precio": "600.00",
+                "cupo": 15,
+            }
+        ]
+    )
+    response = await client.put(f"/eventos/{evento_id}", json=nuevo_payload)
+    assert response.status_code == 409
+    assert "reservas" in response.json()["detail"]
 
 
 async def test_editar_evento_failsWhenNoExiste(client: AsyncClient):

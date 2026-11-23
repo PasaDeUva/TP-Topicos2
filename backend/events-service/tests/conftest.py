@@ -86,7 +86,14 @@ def evento_payload(**overrides) -> dict:
         "nombre": "Festival de Test",
         "venue": "Estadio Monumental",
         "fecha": "2027-03-15T20:00:00Z",
-        "modalidades": [{"nombre": "Campo General", "tipo": "general"}],
+        "modalidades": [
+            {
+                "nombre": "Campo General",
+                "tipo": "general",
+                "precio": "5000.00",
+                "cupo": 100,
+            }
+        ],
     }
     base.update(overrides)
     return base
