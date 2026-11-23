@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_session
+from app.identity import current_organizer
 from app.models import Asiento, Evento, Modalidad, Reserva, Sector
 from app.schemas import (
     ConfirmacionOut,
@@ -87,9 +88,15 @@ async def obtener_evento(
 
 
 @router.post("", response_model=EventoOut, status_code=201)
-async def crear_evento(payload: EventoIn, session: AsyncSession = Depends(get_session)):
+async def crear_evento(
+    payload: EventoIn,
+    owner: uuid.UUID = Depends(current_organizer),
+    session: AsyncSession = Depends(get_session),
+):
+    if payload.owner_id is not None and payload.owner_id != owner:
+        raise HTTPException(status_code=403, detail="forbidden")
     evento = Evento(
-        owner_id=payload.owner_id,
+        owner_id=owner,
         nombre=payload.nombre,
         descripcion=payload.descripcion,
         venue=payload.venue,
@@ -107,15 +114,18 @@ async def crear_evento(payload: EventoIn, session: AsyncSession = Depends(get_se
 async def editar_evento(
     evento_id: uuid.UUID,
     payload: EventoIn,
+    owner: uuid.UUID = Depends(current_organizer),
     session: AsyncSession = Depends(get_session),
 ):
+    if payload.owner_id is not None and payload.owner_id != owner:
+        raise HTTPException(status_code=403, detail="forbidden")
     result = await session.execute(
         select(Evento)
         .where(Evento.id == evento_id)
         .options(_load_options())
     )
     evento = result.scalar_one_or_none()
-    if evento is None:
+    if evento is None or evento.owner_id != owner:
         raise HTTPException(status_code=404, detail="not found")
 
     # Mapeo de modalidades existentes por ID
@@ -134,7 +144,15 @@ async def editar_evento(
                 detail="no se puede eliminar modalidad con historial de reservas",
             )
 
-    evento.owner_id = payload.owner_id
+    # Validar que no se intente cambiar el tipo de una modalidad existente (Issue 4)
+    for m_in in payload.modalidades:
+        if m_in.id is not None and m_in.id in existentes:
+            if m_in.tipo != existentes[m_in.id].tipo:
+                raise HTTPException(
+                    status_code=400,
+                    detail="no se permite cambiar el tipo de una modalidad existente",
+                )
+
     evento.nombre = payload.nombre
     evento.descripcion = payload.descripcion
     evento.venue = payload.venue
@@ -160,7 +178,9 @@ async def editar_evento(
 
 @router.delete("/{evento_id}", response_model=EventoOut)
 async def eliminar_evento(
-    evento_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+    evento_id: uuid.UUID,
+    owner: uuid.UUID = Depends(current_organizer),
+    session: AsyncSession = Depends(get_session),
 ):
     result = await session.execute(
         select(Evento)
@@ -168,7 +188,7 @@ async def eliminar_evento(
         .options(_load_options())
     )
     evento = result.scalar_one_or_none()
-    if evento is None:
+    if evento is None or evento.owner_id != owner:
         raise HTTPException(status_code=404, detail="not found")
 
     evento.activo = False
@@ -208,13 +228,14 @@ async def obtener_disponibilidad(
     session: AsyncSession = Depends(get_session),
 ):
     evento, modalidad = await _get_modalidad_o_404(evento_id, modalidad_id, session)
+    now = datetime.now(timezone.utc)
 
     if modalidad.tipo == "general":
         ocupadas = await session.scalar(
             select(func.count(Reserva.id)).where(
                 Reserva.modalidad_id == modalidad.id,
                 Reserva.estado.in_(["activa", "confirmada"]),
-                or_(Reserva.estado == "confirmada", Reserva.expira_en > func.now()),
+                or_(Reserva.estado == "confirmada", Reserva.expira_en > now),
             )
         )
         disponibles = max(0, (modalidad.cupo or 0) - (ocupadas or 0))
@@ -225,16 +246,21 @@ async def obtener_disponibilidad(
         select(Reserva).where(
             Reserva.modalidad_id == modalidad.id,
             Reserva.estado == "activa",
-            Reserva.expira_en <= func.now(),
+            Reserva.expira_en <= now,
         )
     )
+    hubo_liberacion = False
     for r in vencidas:
         r.estado = "liberada"
+        hubo_liberacion = True
         if r.asiento_id:
             as_v = await session.get(Asiento, r.asiento_id)
             if as_v and as_v.estado == "reservado":
                 as_v.estado = "libre"
-    await session.flush()
+    if hubo_liberacion:
+        await session.commit()
+    else:
+        await session.flush()
 
     disponibles = await session.scalar(
         select(func.count(Asiento.id))
@@ -277,14 +303,15 @@ async def crear_reserva(
             raise HTTPException(status_code=409, detail="idempotency_conflict")
 
     ttl_minutes = int(os.environ.get("RESERVA_TTL_MINUTES", "10"))
-    expira = datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)
+    now = datetime.now(timezone.utc)
+    expira = now + timedelta(minutes=ttl_minutes)
 
     if modalidad.tipo == "general":
         ocupadas = await session.scalar(
             select(func.count(Reserva.id)).where(
                 Reserva.modalidad_id == modalidad.id,
                 Reserva.estado.in_(["activa", "confirmada"]),
-                or_(Reserva.estado == "confirmada", Reserva.expira_en > func.now()),
+                or_(Reserva.estado == "confirmada", Reserva.expira_en > now),
             )
         )
         if (ocupadas or 0) >= (modalidad.cupo or 0):
@@ -334,24 +361,30 @@ async def crear_reserva(
         await session.commit()
         return {"reserva_id": nueva_reserva.id}
 
-    # Modalidad numerada
+    # Modalidad Numerada
     if not payload.asiento_id:
-        raise HTTPException(status_code=400, detail="asiento_id requerido")
+        raise HTTPException(
+            status_code=400, detail="asiento_id requerido para modalidad numerada"
+        )
 
+    # Validar que el asiento pertenezca a la modalidad
     asiento = await session.scalar(
         select(Asiento)
         .join(Sector)
-        .where(Asiento.id == payload.asiento_id, Sector.modalidad_id == modalidad.id)
+        .where(
+            Sector.modalidad_id == modalidad.id,
+            Asiento.id == payload.asiento_id,
+        )
     )
     if not asiento:
         raise HTTPException(status_code=404, detail="asiento not found")
 
-    # Lazy cleanup
+    # Lazy cleanup sobre reservas vencidas para esta modalidad
     vencidas = await session.scalars(
         select(Reserva).where(
             Reserva.modalidad_id == modalidad.id,
             Reserva.estado == "activa",
-            Reserva.expira_en <= func.now(),
+            Reserva.expira_en <= now,
         )
     )
     for r in vencidas:
@@ -479,7 +512,8 @@ async def confirmar_reserva(
     if reserva.estado == "liberada":
         raise HTTPException(status_code=409, detail="reserva liberada")
 
-    if reserva.expira_en <= datetime.now(timezone.utc):
+    now = datetime.now(timezone.utc)
+    if reserva.expira_en <= now:
         reserva.estado = "liberada"
         if reserva.asiento_id:
             asiento = await session.get(Asiento, reserva.asiento_id)

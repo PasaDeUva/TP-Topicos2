@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.database import get_session
+from app.identity import current_organizer
 from app.main import app
 from app.models import Base
 
@@ -19,6 +20,7 @@ TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
     "postgresql+psycopg://events:events@events-db:5432/events_test",
 )
+TEST_OWNER_ID = uuid.UUID("00000000-0000-4000-8000-000000000001")
 
 if "/events_db" in TEST_DATABASE_URL:
     raise RuntimeError(
@@ -68,6 +70,7 @@ async def session(engine) -> AsyncGenerator[AsyncSession, None]:
 @pytest_asyncio.fixture()
 async def client(session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides[get_session] = lambda: session
+    app.dependency_overrides[current_organizer] = lambda: TEST_OWNER_ID
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:
@@ -82,7 +85,7 @@ async def client(session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
 def evento_payload(**overrides) -> dict:
     base = {
-        "owner_id": str(uuid.uuid4()),
+        "owner_id": str(TEST_OWNER_ID),
         "nombre": "Festival de Test",
         "venue": "Estadio Monumental",
         "fecha": "2027-03-15T20:00:00Z",

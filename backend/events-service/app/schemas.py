@@ -25,6 +25,19 @@ class SectorIn(BaseModel):
     precio: Decimal = Field(ge=0)
     asientos: list[AsientoIn] = Field(min_length=1)
 
+    @field_validator("asientos")
+    @classmethod
+    def validate_no_duplicate_asientos(cls, v: list[AsientoIn]) -> list[AsientoIn]:
+        seen = set()
+        for a in v:
+            key = (a.fila, a.numero)
+            if key in seen:
+                raise ValueError(
+                    f"asiento duplicado en sector: fila={a.fila}, numero={a.numero}"
+                )
+            seen.add(key)
+        return v
+
 
 class SectorOut(BaseModel):
     id: uuid.UUID
@@ -72,7 +85,7 @@ class ModalidadOut(BaseModel):
 
 
 class EventoIn(BaseModel):
-    owner_id: uuid.UUID
+    owner_id: uuid.UUID | None = None
     nombre: str = Field(min_length=1, max_length=255)
     descripcion: str | None = None
     venue: str = Field(min_length=1, max_length=255)

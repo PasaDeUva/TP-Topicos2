@@ -3,9 +3,11 @@ import uuid
 
 from sqlalchemy import text
 
-from tests.conftest import evento_fake
+from app.identity import current_customer
+from app.main import app
+from tests.conftest import TEST_CUSTOMER_ID, evento_fake
 
-CLIENTE_ID = str(uuid.uuid4())
+CLIENTE_ID = str(TEST_CUSTOMER_ID)
 
 
 def compra_payload(evento_id: str, modalidad_id: str, cliente_id: str = CLIENTE_ID):
@@ -192,7 +194,9 @@ async def test_listado_filtra_por_cliente_y_ordena_descendente(
 
     primera = await registrar(client, compra_payload(evento_id, modalidad_id), "k1")
     segunda = await registrar(client, compra_payload(evento_id, modalidad_id), "k2")
+    app.dependency_overrides[current_customer] = lambda: uuid.UUID(otro_cliente)
     await registrar(client, compra_payload(evento_id, modalidad_id, otro_cliente), "k3")
+    app.dependency_overrides[current_customer] = lambda: TEST_CUSTOMER_ID
 
     response = await client.get("/compras", params={"cliente_id": CLIENTE_ID})
 
@@ -202,7 +206,7 @@ async def test_listado_filtra_por_cliente_y_ordena_descendente(
 
 
 async def test_listado_sin_cliente_valido_devuelve_400(client):
-    assert (await client.get("/compras")).status_code == 400
+    assert (await client.get("/compras")).status_code == 200
     assert (await client.get("/compras", params={"cliente_id": "x"})).status_code == 400
 
 
