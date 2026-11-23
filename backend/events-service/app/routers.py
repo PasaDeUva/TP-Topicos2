@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_session
+from app.identity import current_organizer
 from app.models import Evento, Modalidad
 from app.schemas import EventoIn, EventoOut
 
@@ -45,9 +46,15 @@ async def obtener_evento(
 
 
 @router.post("", response_model=EventoOut, status_code=201)
-async def crear_evento(payload: EventoIn, session: AsyncSession = Depends(get_session)):
+async def crear_evento(
+    payload: EventoIn,
+    owner: uuid.UUID = Depends(current_organizer),
+    session: AsyncSession = Depends(get_session),
+):
+    if payload.owner_id is not None and payload.owner_id != owner:
+        raise HTTPException(status_code=403, detail="forbidden")
     evento = Evento(
-        owner_id=payload.owner_id,
+        owner_id=owner,
         nombre=payload.nombre,
         descripcion=payload.descripcion,
         venue=payload.venue,
@@ -64,18 +71,20 @@ async def crear_evento(payload: EventoIn, session: AsyncSession = Depends(get_se
 async def editar_evento(
     evento_id: uuid.UUID,
     payload: EventoIn,
+    owner: uuid.UUID = Depends(current_organizer),
     session: AsyncSession = Depends(get_session),
 ):
+    if payload.owner_id is not None and payload.owner_id != owner:
+        raise HTTPException(status_code=403, detail="forbidden")
     result = await session.execute(
         select(Evento)
         .where(Evento.id == evento_id)
         .options(selectinload(Evento.modalidades))
     )
     evento = result.scalar_one_or_none()
-    if evento is None:
+    if evento is None or evento.owner_id != owner:
         raise HTTPException(status_code=404, detail="not found")
 
-    evento.owner_id = payload.owner_id
     evento.nombre = payload.nombre
     evento.descripcion = payload.descripcion
     evento.venue = payload.venue
@@ -89,7 +98,9 @@ async def editar_evento(
 
 @router.delete("/{evento_id}", response_model=EventoOut)
 async def eliminar_evento(
-    evento_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+    evento_id: uuid.UUID,
+    owner: uuid.UUID = Depends(current_organizer),
+    session: AsyncSession = Depends(get_session),
 ):
     result = await session.execute(
         select(Evento)
@@ -97,7 +108,7 @@ async def eliminar_evento(
         .options(selectinload(Evento.modalidades))
     )
     evento = result.scalar_one_or_none()
-    if evento is None:
+    if evento is None or evento.owner_id != owner:
         raise HTTPException(status_code=404, detail="not found")
 
     evento.activo = False

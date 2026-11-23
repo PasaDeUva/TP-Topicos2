@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from app.events_client import EventsClient, EventsServiceError
 from app.schemas import CompraIn
+from tests.conftest import TEST_CUSTOMER_ID
 
 
 async def test_bitacora_registra_metodo_ruta_estado_y_tiempo(client, capsys):
@@ -14,7 +15,7 @@ async def test_bitacora_registra_metodo_ruta_estado_y_tiempo(client, capsys):
 
     response = await client.get(
         "/compras",
-        params={"cliente_id": str(uuid.uuid4())},
+        params={"cliente_id": str(TEST_CUSTOMER_ID)},
         headers={"X-Correlation-Id": correlation},
     )
 

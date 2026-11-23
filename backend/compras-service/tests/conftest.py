@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import (
 
 from app.database import get_session
 from app.events_client import EventsClient, get_events_client
+from app.identity import current_customer
 from app.main import app
 from app.models import Base
 
@@ -21,6 +22,7 @@ TEST_DATABASE_URL = os.getenv(
     "COMPRAS_TEST_DATABASE_URL",
     "postgresql+psycopg://compras:compras@compras-db:5432/compras_test",
 )
+TEST_CUSTOMER_ID = uuid.UUID("00000000-0000-4000-8000-000000000002")
 
 if "/compras_db" in TEST_DATABASE_URL:
     raise RuntimeError(
@@ -76,6 +78,7 @@ async def client(session_factory) -> AsyncGenerator[AsyncClient, None]:
             yield s
 
     app.dependency_overrides[get_session] = _override_session
+    app.dependency_overrides[current_customer] = lambda: TEST_CUSTOMER_ID
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:

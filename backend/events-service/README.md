@@ -13,13 +13,25 @@ Microservicio autónomo para la gestión del catálogo de eventos de la platafor
 
 ## Endpoints de la API
 
+### Autenticación y autorización con Identity
+
+Las consultas del catálogo son públicas. Crear, editar y dar de baja eventos requiere un token Bearer con sesión vigente y rol organizador habilitado. El propietario se toma de la identidad autenticada; `owner_id` puede omitirse y, si se envía, debe coincidir con ella. La edición y baja se limitan a eventos propios y no permiten transferir su propiedad.
+
+Para estas operaciones, el contrato distingue `401` para token ausente, inválido o revocado; `403` para rol insuficiente o identificador proporcionado distinto; `404` para recurso inexistente o ajeno; y `503` cuando Identity o la configuración necesaria no puedan verificarse. El servicio rechaza la operación ante fallas de verificación. Los clientes que antes escribían anónimamente deben enviar `Authorization: Bearer <access_token>`. Ver [ADR-0013](../../docs/adr/0013-identidad-en-eventos-y-compras.md).
+
+La configuración de integración utiliza `IDENTITY_SERVICE_URL`, `IDENTITY_JWT_ISSUER`, `IDENTITY_JWT_AUDIENCE`, `IDENTITY_TIMEOUT_SECONDS` e `IDENTITY_EVENTS_SERVICE_TOKEN`. Compose monta la clave pública de Identity en `/keys/public/public.pem` sin acceso de escritura. Identity debe configurar la credencial `events` con `roles_read` y `sessions_read`; los secretos se suministran fuera del repositorio. Por defecto se exige HTTPS. Para desarrollo local o pruebas aisladas únicamente, `CONSUMER_ENV=local` e `IDENTITY_ALLOW_LOCAL_HTTP=true` habilitan HTTP a `identity-service` o loopback con credenciales de prueba.
+
+En Compose, `IDENTITY_SERVICE_CREDENTIALS_JSON` configura las credenciales en Identity: la entrada `events` debe tener el mismo token que `IDENTITY_EVENTS_SERVICE_TOKEN` y ambos permisos habilitados. Los valores locales predeterminados de Identity solo permiten consultar roles; no habilitan la verificación de sesiones.
+
+El verificador `python backend/events-service/scripts/verify_compose.py` ejecuta la integración aislada sin necesitar historial Git. Para incluir la prueba de reversión, agregue `--rollback-ref <revision>` con una revisión anterior disponible localmente; esa prueba verifica que las escrituras anónimas vuelven a estar habilitadas.
+
 | Método | Ruta | Descripción | Códigos HTTP |
 |---|---|---|---|
 | `GET` | `/eventos` | Lista todos los eventos (ordenados por fecha de creación) | `200` |
 | `GET` | `/eventos/{id}` | Obtiene el detalle de un evento por su UUID | `200`, `400` (UUID inválido), `404` |
-| `POST` | `/eventos` | Da de alta un nuevo evento con sus modalidades | `201`, `400` (validación fallida) |
-| `PUT` | `/eventos/{id}` | Actualización completa con reemplazo total de modalidades | `200`, `400`, `404` |
-| `DELETE` | `/eventos/{id}` | Baja lógica del evento (`activo = false`) | `200`, `404` |
+| `POST` | `/eventos` | Da de alta un nuevo evento con sus modalidades | `201`, `400`, `401`, `403`, `503` |
+| `PUT` | `/eventos/{id}` | Actualización completa con reemplazo total de modalidades | `200`, `400`, `401`, `403`, `404`, `503` |
+| `DELETE` | `/eventos/{id}` | Baja lógica del evento (`activo = false`) | `200`, `400`, `401`, `403`, `404`, `503` |
 
 ## Variables de entorno
 

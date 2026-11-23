@@ -19,7 +19,7 @@ class ModalidadOut(BaseModel):
 
 
 class EventoIn(BaseModel):
-    owner_id: uuid.UUID
+    owner_id: uuid.UUID | None = None
     nombre: str = Field(min_length=1, max_length=255)
     descripcion: str | None = None
     venue: str = Field(min_length=1, max_length=255)
