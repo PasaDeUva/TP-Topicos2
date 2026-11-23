@@ -38,8 +38,18 @@ El workflow de CI ejecuta el mismo verificador en el paso `Test Identity, Events
 | `GET` | `/eventos` | Lista todos los eventos (ordenados por fecha de creación) | `200` |
 | `GET` | `/eventos/{id}` | Obtiene el detalle de un evento por su UUID | `200`, `400` (UUID inválido), `404` |
 | `POST` | `/eventos` | Da de alta un nuevo evento con sus modalidades | `201`, `400`, `401`, `403`, `503` |
-| `PUT` | `/eventos/{id}` | Actualización completa con reemplazo total de modalidades | `200`, `400`, `401`, `403`, `404`, `503` |
+| `PUT` | `/eventos/{id}` | Actualización completa con reemplazo de modalidades (preserva `id` y rechaza con 409 si la omitida tiene reservas) | `200`, `400`, `401`, `403`, `404`, `409`, `503` |
 | `DELETE` | `/eventos/{id}` | Baja lógica del evento (`activo = false`) | `200`, `400`, `401`, `403`, `404`, `503` |
+| `GET` | `/eventos/{id}/modalidades/{mid}/disponibilidad` | Consulta la cantidad de entradas o asientos disponibles | `200` (`{"disponibles": int}`), `404` |
+| `POST` | `/eventos/{id}/modalidades/{mid}/reservas` | Crea una reserva temporal (soporta `Idempotency-Key` en headers) | `201` (`{"reserva_id": uuid}`), `200` (reintento idempotente), `400`, `404`, `409` |
+| `DELETE` | `/eventos/{id}/modalidades/{mid}/reservas/{reserva_id}` | Libera una reserva activa restituyendo el asiento a `libre` | `200` (`{"status": "liberada"}`), `404`, `409` |
+| `POST` | `/eventos/{id}/modalidades/{mid}/reservas/{reserva_id}/confirmar` | Confirma la venta de una reserva activa pasando el asiento a `vendido` | `200` (`{"status": "confirmada"}`), `404`, `409` |
+
+### Modelo de Inventario y Tarifas
+
+- **Modalidad General:** tarifa plana en `precio NUMERIC(10, 2)` y cupo en `cupo INTEGER` dentro de `modalidades`. La disponibilidad descuenta reservas confirmadas y activas vigentes.
+- **Modalidad Numerada:** `precio` y `cupo` son `NULL` en `modalidades`. Cada ubicación se desagrega en `sectores` (con su propio `precio`) y `asientos` (`fila`, `numero`, `estado IN ('libre', 'reservado', 'vendido')`).
+- **Reservas:** tabla `reservas` con TTL (`expira_en`), estado (`'activa'`, `'confirmada'`, `'liberada'`) y clave única de idempotencia (`uq_reservas_idempotency_key`). Integridad referencial con `ON DELETE RESTRICT` para evitar borrados accidentales de ventas históricas.
 
 ## Variables de entorno
 

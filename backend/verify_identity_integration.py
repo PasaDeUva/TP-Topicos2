@@ -171,7 +171,14 @@ def verify(rollback_files=None):
         "nombre": "Integration event",
         "venue": "Test venue",
         "fecha": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
-        "modalidades": [{"nombre": "General", "tipo": "general"}],
+        "modalidades": [
+            {
+                "nombre": "General",
+                "tipo": "general",
+                "precio": "1500.00",
+                "cupo": 100,
+            }
+        ],
     }
     org_token = organizer_tokens["access_token"]
     event_correlation = str(uuid.uuid4())
