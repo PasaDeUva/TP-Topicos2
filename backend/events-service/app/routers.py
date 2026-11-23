@@ -1,4 +1,3 @@
-import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -8,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.database import get_session
 from app.identity import current_organizer
 from app.models import Asiento, Evento, Modalidad, Reserva, Sector
@@ -144,7 +144,7 @@ async def editar_evento(
                 detail="no se puede eliminar modalidad con historial de reservas",
             )
 
-    # Validar que no se intente cambiar el tipo de una modalidad existente (Issue 4)
+    # Validar que no se intente cambiar el tipo de una modalidad existente (Hallazgo 2)
     for m_in in payload.modalidades:
         if m_in.id is not None and m_in.id in existentes:
             if m_in.tipo != existentes[m_in.id].tipo:
@@ -218,6 +218,37 @@ async def _get_modalidad_o_404(
     return evento, modalidad
 
 
+async def _lazy_cleanup_reservas_vencidas(
+    modalidad_id: uuid.UUID, session: AsyncSession
+) -> bool:
+    # 1. Liberación perezosa de reservas activas vencidas (Lock en reservas primero)
+    now = datetime.now(timezone.utc)
+    vencidas = await session.scalars(
+        select(Reserva)
+        .where(
+            Reserva.modalidad_id == modalidad_id,
+            Reserva.estado == "activa",
+            Reserva.expira_en <= now,
+        )
+        .with_for_update()
+    )
+    liberadas = False
+    for r in vencidas:
+        r.estado = "liberada"
+        liberadas = True
+        if r.asiento_id:
+            # 2. Lock en asiento y verificación defensiva de pertenencia activa
+            asiento = await session.scalar(
+                select(Asiento)
+                .where(Asiento.id == r.asiento_id)
+                .with_for_update()
+            )
+            if asiento and asiento.estado == "reservado":
+                asiento.estado = "libre"
+    await session.flush()
+    return liberadas
+
+
 @router.get(
     "/{evento_id}/modalidades/{modalidad_id}/disponibilidad",
     response_model=DisponibilidadOut,
@@ -242,25 +273,9 @@ async def obtener_disponibilidad(
         return {"disponibles": disponibles}
 
     # Para modalidad numerada: lazy cleanup previo para restaurar asientos vencidos
-    vencidas = await session.scalars(
-        select(Reserva).where(
-            Reserva.modalidad_id == modalidad.id,
-            Reserva.estado == "activa",
-            Reserva.expira_en <= now,
-        )
-    )
-    hubo_liberacion = False
-    for r in vencidas:
-        r.estado = "liberada"
-        hubo_liberacion = True
-        if r.asiento_id:
-            as_v = await session.get(Asiento, r.asiento_id)
-            if as_v and as_v.estado == "reservado":
-                as_v.estado = "libre"
+    hubo_liberacion = await _lazy_cleanup_reservas_vencidas(modalidad.id, session)
     if hubo_liberacion:
         await session.commit()
-    else:
-        await session.flush()
 
     disponibles = await session.scalar(
         select(func.count(Asiento.id))
@@ -302,11 +317,17 @@ async def crear_reserva(
                 return {"reserva_id": reserva_existente.id}
             raise HTTPException(status_code=409, detail="idempotency_conflict")
 
-    ttl_minutes = int(os.environ.get("RESERVA_TTL_MINUTES", "10"))
     now = datetime.now(timezone.utc)
-    expira = now + timedelta(minutes=ttl_minutes)
+    expira = now + timedelta(minutes=settings.reserva_ttl_minutes)
 
     if modalidad.tipo == "general":
+        modalidad_lock = await session.scalar(
+            select(Modalidad)
+            .where(Modalidad.id == modalidad.id)
+            .with_for_update()
+        )
+        cupo_total = modalidad_lock.cupo if modalidad_lock else (modalidad.cupo or 0)
+
         ocupadas = await session.scalar(
             select(func.count(Reserva.id)).where(
                 Reserva.modalidad_id == modalidad.id,
@@ -314,7 +335,7 @@ async def crear_reserva(
                 or_(Reserva.estado == "confirmada", Reserva.expira_en > now),
             )
         )
-        if (ocupadas or 0) >= (modalidad.cupo or 0):
+        if (ocupadas or 0) >= (cupo_total or 0):
             # Rescate previo al 409 si concurrió con la misma clave
             if idempotency_key:
                 reserva_existente = await session.scalar(
@@ -380,20 +401,7 @@ async def crear_reserva(
         raise HTTPException(status_code=404, detail="asiento not found")
 
     # Lazy cleanup sobre reservas vencidas para esta modalidad
-    vencidas = await session.scalars(
-        select(Reserva).where(
-            Reserva.modalidad_id == modalidad.id,
-            Reserva.estado == "activa",
-            Reserva.expira_en <= now,
-        )
-    )
-    for r in vencidas:
-        r.estado = "liberada"
-        if r.asiento_id:
-            as_v = await session.get(Asiento, r.asiento_id)
-            if as_v and as_v.estado == "reservado":
-                as_v.estado = "libre"
-    await session.flush()
+    await _lazy_cleanup_reservas_vencidas(modalidad.id, session)
 
     stmt = (
         update(Asiento)
@@ -462,10 +470,12 @@ async def liberar_reserva(
     await _get_modalidad_o_404(evento_id, modalidad_id, session)
 
     reserva = await session.scalar(
-        select(Reserva).where(
+        select(Reserva)
+        .where(
             Reserva.id == reserva_id,
             Reserva.modalidad_id == modalidad_id,
         )
+        .with_for_update()
     )
     if not reserva:
         raise HTTPException(status_code=404, detail="reserva not found")
@@ -477,7 +487,11 @@ async def liberar_reserva(
 
     reserva.estado = "liberada"
     if reserva.asiento_id:
-        asiento = await session.get(Asiento, reserva.asiento_id)
+        asiento = await session.scalar(
+            select(Asiento)
+            .where(Asiento.id == reserva.asiento_id)
+            .with_for_update()
+        )
         if asiento and asiento.estado == "reservado":
             asiento.estado = "libre"
 
@@ -498,10 +512,12 @@ async def confirmar_reserva(
     await _get_modalidad_o_404(evento_id, modalidad_id, session)
 
     reserva = await session.scalar(
-        select(Reserva).where(
+        select(Reserva)
+        .where(
             Reserva.id == reserva_id,
             Reserva.modalidad_id == modalidad_id,
         )
+        .with_for_update()
     )
     if not reserva:
         raise HTTPException(status_code=404, detail="reserva not found")
@@ -516,7 +532,11 @@ async def confirmar_reserva(
     if reserva.expira_en <= now:
         reserva.estado = "liberada"
         if reserva.asiento_id:
-            asiento = await session.get(Asiento, reserva.asiento_id)
+            asiento = await session.scalar(
+                select(Asiento)
+                .where(Asiento.id == reserva.asiento_id)
+                .with_for_update()
+            )
             if asiento and asiento.estado == "reservado":
                 asiento.estado = "libre"
         await session.commit()
@@ -524,8 +544,12 @@ async def confirmar_reserva(
 
     reserva.estado = "confirmada"
     if reserva.asiento_id:
-        asiento = await session.get(Asiento, reserva.asiento_id)
-        if asiento:
+        asiento = await session.scalar(
+            select(Asiento)
+            .where(Asiento.id == reserva.asiento_id)
+            .with_for_update()
+        )
+        if asiento and asiento.estado == "reservado":
             asiento.estado = "vendido"
 
     await session.commit()

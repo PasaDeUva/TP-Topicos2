@@ -382,3 +382,11 @@ async def test_bitacora_registraError500(client: AsyncClient, capsys):
         assert '"status_code": 500' in captured.out
     finally:
         app.dependency_overrides.clear()
+
+
+def test_config_reserva_ttl_minutes_default():
+    from app.config import Settings
+
+    cfg = Settings()
+    assert cfg.reserva_ttl_minutes == 10
+
