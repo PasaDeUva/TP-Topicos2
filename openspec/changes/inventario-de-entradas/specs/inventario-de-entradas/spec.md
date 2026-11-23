@@ -24,7 +24,7 @@ El sistema SHALL exponer `GET /eventos/{evento_id}/modalidades/{modalidad_id}/di
 - **THEN** el sistema responde 404 Not Found
 
 ### Requirement: Reserva de entrada
-El sistema SHALL permitir reservar una entrada mediante `POST /eventos/{evento_id}/modalidades/{modalidad_id}/reservas`, retornando `{"reserva_id": "<uuid>"}` con código 201 Created. El endpoint SHALL aceptar opcionalmente la cabecera `Idempotency-Key` (hasta 255 caracteres) para garantizar reintentos seguros. Para modalidad `general` descuenta una unidad de la disponibilidad calculada; para modalidad `numerada` cambia el estado del asiento a `reservado`.
+El sistema SHALL permitir reservar una entrada mediante `POST /eventos/{evento_id}/modalidades/{modalidad_id}/reservas`, retornando `{"reserva_id": "<uuid>"}` con código 201 Created. El endpoint SHALL aceptar opcionalmente la cabecera `Idempotency-Key` (hasta 255 caracteres) con unicidad global a nivel de servicio para reintentos y solicitudes concurrentes seguras. Para modalidad `general` descuenta cupo; para `numerada` cambia el asiento a `reservado`.
 
 #### Scenario: Reserva exitosa en modalidad general
 - **GIVEN** una modalidad de tipo `general` con cupo disponible mayor a cero
@@ -38,12 +38,12 @@ El sistema SHALL permitir reservar una entrada mediante `POST /eventos/{evento_i
 
 #### Scenario: Reintento idempotente de reserva con misma clave y mismos datos
 - **GIVEN** una reserva creada previamente con una cabecera `Idempotency-Key`
-- **WHEN** el cliente reintenta enviar `POST .../reservas` con la misma `Idempotency-Key` y el mismo payload
+- **WHEN** el cliente envía o concurre con una solicitud `POST .../reservas` con la misma `Idempotency-Key` y el mismo payload
 - **THEN** el sistema responde con el `reserva_id` original sin crear reservas adicionales ni duplicar la ocupación
 
 #### Scenario: Conflicto por reutilización de Idempotency-Key con datos divergentes
 - **GIVEN** una reserva creada previamente con una cabecera `Idempotency-Key`
-- **WHEN** el cliente envía `POST .../reservas` reutilizando dicha `Idempotency-Key` pero con datos distintos (otro `asiento_id`)
+- **WHEN** el cliente envía `POST .../reservas` reutilizando dicha `Idempotency-Key` pero con datos distintos (otro `asiento_id` u otra modalidad)
 - **THEN** el sistema responde con código 409 Conflict y no altera el inventario
 
 #### Scenario: Sin disponibilidad en modalidad general

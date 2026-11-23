@@ -28,7 +28,9 @@ Asimismo, de acuerdo con [ADR-0006](0006-flujo-de-compra-completo.md), las reser
 
 3. **Mecanismo de expiración por TTL (Time-To-Live) e Idempotencia:**
    - Cada reserva se crea con `expira_en = NOW() + interval '10 minutes'` (configurable vía `RESERVA_TTL_MINUTES`).
-   - `POST .../reservas` admite cabecera opcional `Idempotency-Key` (hasta 255 caracteres): reintentos con la misma clave y payload equivalente retornan el `reserva_id` preexistente; si se reutiliza con datos divergentes responde `409 Conflict`.
+   - `POST .../reservas` admite cabecera opcional `Idempotency-Key` (hasta 255 caracteres) respaldada por una restricción de unicidad global `CONSTRAINT uq_reservas_idempotency_key UNIQUE (idempotency_key)` en la tabla `reservas`:
+     - Ante reintentos o llamadas concurrentes con la misma clave y payload equivalente, se serializa la inserción en base de datos; la transacción que atrape colisión de clave única (`IntegrityError`) recupera la reserva existente y retorna el `reserva_id` preexistente sin duplicar reservas ni sobreconsumir cupo.
+     - Si la clave se reutiliza para una modalidad distinta o con datos divergentes (otro asiento), responde `409 Conflict` (`idempotency_conflict`).
    - En las consultas de disponibilidad y confirmación:
      - Disponibilidad contabiliza como libres los asientos que ya están `libre` o cuya reserva activa haya expirado.
      - `POST .../confirmar` valida bajo lock de fila que `reserva.estado == 'activa'` y `expira_en > NOW()`. Si ya venció, se transiciona a `liberada` (restituyendo el asiento a `libre` solo si continúa asignado a esta) y se rechaza con `409 Conflict`.

@@ -31,8 +31,8 @@ ALTER TABLE modalidades
     ADD COLUMN precio NUMERIC(10, 2) NULL,
     ADD COLUMN cupo INTEGER NULL;
 
--- Backfill para registros preexistentes de migración 0001
-UPDATE modalidades SET precio = 0.00 WHERE precio IS NULL;
+-- Backfill acotado exclusivamente a modalidades generales de migración 0001
+UPDATE modalidades SET precio = 0.00 WHERE tipo = 'general' AND precio IS NULL;
 UPDATE modalidades SET cupo = 0 WHERE tipo = 'general' AND cupo IS NULL;
 
 -- Restricción de consistencia según el tipo de modalidad
@@ -65,17 +65,17 @@ CREATE TABLE reservas (
     expira_en TIMESTAMPTZ NOT NULL,
     creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     idempotency_key VARCHAR(255) NULL,
-    CONSTRAINT ck_reservas_estado CHECK (estado IN ('activa', 'confirmada', 'liberada'))
+    CONSTRAINT ck_reservas_estado CHECK (estado IN ('activa', 'confirmada', 'liberada')),
+    CONSTRAINT uq_reservas_idempotency_key UNIQUE (idempotency_key)
 );
 CREATE INDEX ix_reservas_modalidad_estado ON reservas (modalidad_id, estado);
-CREATE INDEX ix_reservas_idempotency ON reservas (modalidad_id, idempotency_key);
 ```
 
 **Justificación:**
 - Distinción clara de tarifas: en `general`, la tarifa plana vive en `modalidades.precio`. En `numerado`, `modalidades.precio` es `NULL` y cada sector gobierna su propia tarifa en `sectores.precio`.
-- El backfill garantiza que eventos y modalidades preexistentes en la base de datos sigan siendo válidos tras correr la migración sin violar las restricciones `NOT NULL`.
+- El backfill acotado a `tipo = 'general'` garantiza que eventos y modalidades preexistentes en la base de datos sigan siendo válidos tras correr la migración sin violar las restricciones `NOT NULL` ni alterar las numeradas (que deben conservar `precio IS NULL`).
 - `ON DELETE RESTRICT` en `reservas` impide borrados accidentales de transacciones comerciales y preserva la auditoría histórica.
-- `idempotency_key` permite a clientes orquestadores como `compras-service` reintentar de forma segura sin riesgo de reservas duplicadas o fugas de cupo.
+- `uq_reservas_idempotency_key` garantiza unicidad global a nivel base de datos: impide que llamadas concurrentes con la misma clave inserten múltiples reservas en paralelo, y permite detectar de inmediato si un cliente intenta reutilizar la misma clave para una modalidad diferente.
 
 ### 2. Preservación de identidades e integridad en `PUT /eventos/{id}`
 
@@ -111,9 +111,11 @@ Se incorporan 4 endpoints bajo el router de eventos en `events-service`:
    - Retorna `200 {"disponibles": <int>}` o `404`.
 2. `POST /eventos/{id}/modalidades/{mid}/reservas`:
    - Acepta cabecera opcional `Idempotency-Key` (hasta 255 caracteres).
-   - Si se recibe `Idempotency-Key`, consulta si ya existe una reserva para `(modalidad_id, idempotency_key)`:
-     - Si existe y los datos coinciden: retorna `200 OK` (o `201`) con `{"reserva_id": "<uuid>"}` original sin reservar nuevamente.
-     - Si existe pero con datos distintos (otro asiento o modalidad): responde `409 Conflict` (`idempotency_conflict`).
+   - Si se recibe `Idempotency-Key` (búsqueda global en tabla `reservas`):
+     - Si ya existe una reserva con dicha clave:
+       - Si coincide en `modalidad_id` y en los datos del payload (mismo asiento o general): retorna `200 OK` (o `201`) con `{"reserva_id": "<uuid>"}` original sin reservar nuevamente.
+       - Si difiere en `modalidad_id` o en el payload (otro asiento): responde `409 Conflict` (`idempotency_conflict`).
+     - Si concurren solicitudes simultáneas con la misma clave: la restricción `uq_reservas_idempotency_key` garantiza que solo una inserción proceda; la transacción perdedora atrapa la violación de unicidad (`IntegrityError`), recupera la reserva ganadora y reconcilia la respuesta idéntica o rechaza con 409 si difiere.
    - En `general`: valida disponibilidad > 0, crea reserva activa con `expira_en` y la clave de idempotencia, retorna `201 {"reserva_id": "<uuid>"}`.
    - En `numerado`: requiere body `{"asiento_id": "<uuid>"}`, valida asiento libre, actualiza asiento a `reservado`, crea reserva activa con `asiento_id`, `expira_en` y la clave, retorna `201 {"reserva_id": "<uuid>"}`.
    - Si no hay disponibilidad o el asiento no está libre: responde `409 {"detail": "sin disponibilidad"}` o `409 {"detail": "asiento no disponible"}`.
@@ -131,14 +133,14 @@ Se incorporan 4 endpoints bajo el router de eventos en `events-service`:
 
 Este change y el change complementario `concurrencia-de-reservas` comparten el esquema relacional provisto por la migración `0002_add_inventario.py`, los modelos SQLAlchemy en `app/models.py` y las operaciones del ciclo de vida de reservas. Se implementan y verifican de forma conjunta en `events-service`.
 
-### 4. Actualización de esquemas de Catálogo
+### 5. Actualización de esquemas de Catálogo
 
 - `ModalidadIn`:
   - `precio: Decimal | None = None`
   - `cupo: int | None = None`
   - `sectores: list[SectorIn] = []`
   - Validación con `@model_validator(mode="after")`:
-    - Si `tipo == "general"`: `precio` y `cupo` obligatorios (`precio >= 0`, `cupo >= 1`).
+    - Si `tipo == "general"`: `precio` y `cupo` obligatorios (`precio >= 0`, `cupo >= 0`), permitiendo editar y conservar modalidades generales migradas o temporalmente sin cupo asignado.
     - Si `tipo == "numerado"`: `sectores` debe tener al menos un sector, cada sector con `precio >= 0` y lista de asientos.
 - `ModalidadOut`: expone `precio`, `cupo` y `sectores` con sus `asientos`.
 

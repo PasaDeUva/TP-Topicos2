@@ -85,9 +85,13 @@ if ocupadas >= modalidad.cupo:
 - Corrige el riesgo de sobreventa post-confirmación: las reservas confirmadas permanecen computadas en la ocupación, mientras que las reservas activas vencidas dejan de restar cupo.
 - `with_for_update()` sobre la fila de modalidad serializa la verificación y la inserción durante milisegundos, asegurando exactitud matemática.
 
-### 3. Expiración por TTL e Idempotencia en Confirmación
+### 3. Expiración por TTL e Idempotencia en Creación y Confirmación
 
 - Cada reserva se crea con `expira_en = datetime.now(timezone.utc) + timedelta(minutes=settings.reserva_ttl_minutes)`.
+- En la creación (`POST .../reservas`):
+  - Soporte para cabecera opcional `Idempotency-Key` (hasta 255 caracteres).
+  - La tabla `reservas` cuenta con la restricción `CONSTRAINT uq_reservas_idempotency_key UNIQUE (idempotency_key)`.
+  - Si dos solicitudes simultáneas envían la misma clave, una inserta la fila y la otra atrapa la excepción de unicidad (`IntegrityError`). La transacción perdedora rescata la reserva existente: si coincide en `modalidad_id` y en el asiento (o es general), responde de forma transparente con el `reserva_id` persistido; si difiere en modalidad o asiento responde `409 Conflict` (`idempotency_conflict`).
 - En la confirmación (`POST .../confirmar`):
   ```python
   reserva = await session.scalar(
