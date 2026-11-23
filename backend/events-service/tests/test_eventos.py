@@ -390,3 +390,100 @@ def test_config_reserva_ttl_minutes_default():
     cfg = Settings()
     assert cfg.reserva_ttl_minutes == 10
 
+
+async def test_editar_evento_failsWhenCambioDeTipo(client: AsyncClient):
+    created = await client.post("/eventos", json=evento_payload())
+    event_id = created.json()["id"]
+    mod_id = created.json()["modalidades"][0]["id"]
+
+    # Intentar cambiar de general a numerado con el mismo id
+    payload = evento_payload(
+        modalidades=[
+            {
+                "id": mod_id,
+                "nombre": "Plateado",
+                "tipo": "numerado",
+                "sectores": [
+                    {
+                        "nombre": "Sector A",
+                        "precio": "2500.00",
+                        "asientos": [{"fila": "1", "numero": 1}],
+                    }
+                ],
+            }
+        ]
+    )
+    response = await client.put(f"/eventos/{event_id}", json=payload)
+    assert response.status_code == 400
+    assert "no se permite cambiar el tipo" in response.json()["detail"]
+
+
+async def test_editar_evento_actualizaPrecioSectorNumerado(client: AsyncClient):
+    payload_creacion = evento_payload(
+        modalidades=[
+            {
+                "nombre": "Numerada",
+                "tipo": "numerado",
+                "sectores": [
+                    {
+                        "nombre": "Sector VIP",
+                        "precio": "3000.00",
+                        "asientos": [{"fila": "A", "numero": 1}],
+                    }
+                ],
+            }
+        ]
+    )
+    created = await client.post("/eventos", json=payload_creacion)
+    assert created.status_code == 201
+    event_id = created.json()["id"]
+    mod_id = created.json()["modalidades"][0]["id"]
+
+    # Editar actualizando el precio del sector
+    payload_edicion = evento_payload(
+        modalidades=[
+            {
+                "id": mod_id,
+                "nombre": "Numerada Modificada",
+                "tipo": "numerado",
+                "sectores": [
+                    {
+                        "nombre": "Sector VIP",
+                        "precio": "4500.00",
+                        "asientos": [{"fila": "A", "numero": 1}],
+                    }
+                ],
+            }
+        ]
+    )
+    response = await client.put(f"/eventos/{event_id}", json=payload_edicion)
+    assert response.status_code == 200
+    mod_actualizada = response.json()["modalidades"][0]
+    assert mod_actualizada["nombre"] == "Numerada Modificada"
+    assert mod_actualizada["sectores"][0]["precio"] == "4500.00"
+
+
+async def test_crear_evento_failsWhenAsientosDuplicadosEnSector(client: AsyncClient):
+    payload = evento_payload(
+        modalidades=[
+            {
+                "nombre": "Numerada",
+                "tipo": "numerado",
+                "sectores": [
+                    {
+                        "nombre": "Sector Colision",
+                        "precio": "1000.00",
+                        "asientos": [
+                            {"fila": "1", "numero": 1},
+                            {"fila": "1", "numero": 1},
+                        ],
+                    }
+                ],
+            }
+        ]
+    )
+    response = await client.post("/eventos", json=payload)
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid body"
+
+

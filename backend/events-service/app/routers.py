@@ -167,6 +167,11 @@ async def editar_evento(
             if m_in.tipo == "general":
                 mod.precio = m_in.precio
                 mod.cupo = m_in.cupo
+            elif m_in.tipo == "numerado" and m_in.sectores:
+                sectores_existentes = {s.nombre: s for s in mod.sectores}
+                for s_in in m_in.sectores:
+                    if s_in.nombre in sectores_existentes:
+                        sectores_existentes[s_in.nombre].precio = s_in.precio
             modalidades_actualizadas.append(mod)
         else:
             modalidades_actualizadas.append(_crear_modalidad(m_in))

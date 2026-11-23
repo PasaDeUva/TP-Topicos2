@@ -283,6 +283,13 @@ async def test_disponibilidad_tras_expiracion_reserva(
     )
     assert disp_n2.json() == {"disponibles": 2}
 
+    # Verificar persistencia en BD tras el GET (Hallazgo 1: commit lazy cleanup)
+    async with session_factory() as session:
+        as_db = await session.get(Asiento, uuid.UUID(asiento_id))
+        res_db = await session.get(Reserva, uuid.UUID(r_num.json()["reserva_id"]))
+        assert as_db.estado == "libre"
+        assert res_db.estado == "liberada"
+
 
 async def test_confirmacion_idempotente_y_expirada(
     concurrent_client: AsyncClient,
@@ -394,3 +401,41 @@ async def test_reserva_numerada_lazy_cleanup_al_reservar(
 
         asiento_db = await session.get(Asiento, uuid.UUID(asiento_id))
         assert asiento_db.estado == "reservado"
+
+
+async def test_confirmacion_defensiva_asiento_no_reservado(
+    concurrent_client: AsyncClient,
+    session_factory,
+    evento_concurrencia_payload,
+):
+    r = await concurrent_client.post("/eventos", json=evento_concurrencia_payload)
+    evento = r.json()
+    numerada = next(m for m in evento["modalidades"] if m["tipo"] == "numerado")
+    asiento_id = numerada["sectores"][0]["asientos"][0]["id"]
+
+    r_num = await concurrent_client.post(
+        f"/eventos/{evento['id']}/modalidades/{numerada['id']}/reservas",
+        json={"asiento_id": asiento_id},
+    )
+    res_id = uuid.UUID(r_num.json()["reserva_id"])
+
+    # Modificar directamente el asiento en BD a libre simulando inconsistencia externa
+    async with session_factory() as session:
+        await session.execute(
+            update(Asiento)
+            .where(Asiento.id == uuid.UUID(asiento_id))
+            .values(estado="libre")
+        )
+        await session.commit()
+
+    # Confirmar reserva
+    conf = await concurrent_client.post(
+        f"/eventos/{evento['id']}/modalidades/{numerada['id']}/reservas/{res_id}/confirmar"
+    )
+    assert conf.status_code == 200
+
+    # Comprobar que la validación defensiva impidió cambiar el asiento a vendido
+    async with session_factory() as session:
+        as_db = await session.get(Asiento, uuid.UUID(asiento_id))
+        assert as_db.estado == "libre"
+
