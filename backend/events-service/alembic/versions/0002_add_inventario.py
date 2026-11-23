@@ -21,9 +21,10 @@ def upgrade() -> None:
     op.add_column("modalidades", sa.Column("precio", sa.Numeric(10, 2), nullable=True))
     op.add_column("modalidades", sa.Column("cupo", sa.Integer(), nullable=True))
 
-    # 2. Backfill para registros preexistentes de migración 0001 (exclusivo para general)
+    # 2. Backfill para registros preexistentes (exclusivo para general)
     op.execute(
-        "UPDATE modalidades SET precio = 0.00 WHERE tipo = 'general' AND precio IS NULL;"
+        "UPDATE modalidades SET precio = 0.00 "
+        "WHERE tipo = 'general' AND precio IS NULL;"
     )
     op.execute(
         "UPDATE modalidades SET cupo = 0 WHERE tipo = 'general' AND cupo IS NULL;"
@@ -33,7 +34,8 @@ def upgrade() -> None:
     op.create_check_constraint(
         "ck_modalidades_precio_cupo",
         "modalidades",
-        "(tipo = 'general' AND precio IS NOT NULL AND precio >= 0 AND cupo IS NOT NULL AND cupo >= 0) "
+        "(tipo = 'general' AND precio IS NOT NULL AND precio >= 0 "
+        "AND cupo IS NOT NULL AND cupo >= 0) "
         "OR (tipo = 'numerado' AND precio IS NULL AND cupo IS NULL)",
     )
 

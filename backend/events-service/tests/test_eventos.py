@@ -257,7 +257,9 @@ async def test_editar_evento_preservaModalidadPorId(client: AsyncClient):
     assert data["modalidades"][0]["cupo"] == 25
 
 
-async def test_editar_evento_failsWhenModalidadOmitidaTieneReservas(client: AsyncClient):
+async def test_editar_evento_failsWhenModalidadOmitidaTieneReservas(
+    client: AsyncClient,
+):
     r = await client.post(
         "/eventos",
         json=evento_payload(
@@ -275,7 +277,9 @@ async def test_editar_evento_failsWhenModalidadOmitidaTieneReservas(client: Asyn
     modalidad_id = r.json()["modalidades"][0]["id"]
 
     # Crear una reserva en esa modalidad
-    r_res = await client.post(f"/eventos/{evento_id}/modalidades/{modalidad_id}/reservas")
+    r_res = await client.post(
+        f"/eventos/{evento_id}/modalidades/{modalidad_id}/reservas"
+    )
     assert r_res.status_code == 201
 
     # Intentar editar el evento omitiendo la modalidad con reservas

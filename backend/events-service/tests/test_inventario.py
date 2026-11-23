@@ -1,9 +1,7 @@
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 import uuid
 
-from httpx import AsyncClient
 import pytest
+from httpx import AsyncClient
 
 from tests.conftest import evento_payload
 
@@ -43,16 +41,24 @@ async def test_obtener_disponibilidad_general_y_numerada(
     r = await client.post("/eventos", json=evento_con_inventario_payload)
     assert r.status_code == 201
     evento = r.json()
-    general_id = next(m["id"] for m in evento["modalidades"] if m["tipo"] == "general")
-    numerada_id = next(m["id"] for m in evento["modalidades"] if m["tipo"] == "numerado")
+    general_id = next(
+        m["id"] for m in evento["modalidades"] if m["tipo"] == "general"
+    )
+    numerada_id = next(
+        m["id"] for m in evento["modalidades"] if m["tipo"] == "numerado"
+    )
 
     # Disponibilidad general inicial = cupo (2)
-    resp_gen = await client.get(f"/eventos/{evento['id']}/modalidades/{general_id}/disponibilidad")
+    resp_gen = await client.get(
+        f"/eventos/{evento['id']}/modalidades/{general_id}/disponibilidad"
+    )
     assert resp_gen.status_code == 200
     assert resp_gen.json() == {"disponibles": 2}
 
     # Disponibilidad numerada inicial = cantidad de asientos libres (2)
-    resp_num = await client.get(f"/eventos/{evento['id']}/modalidades/{numerada_id}/disponibilidad")
+    resp_num = await client.get(
+        f"/eventos/{evento['id']}/modalidades/{numerada_id}/disponibilidad"
+    )
     assert resp_num.status_code == 200
     assert resp_num.json() == {"disponibles": 2}
 
@@ -61,7 +67,9 @@ async def test_obtener_disponibilidad_failsWhenModalidadNoExiste(client: AsyncCl
     r = await client.post("/eventos", json=evento_payload())
     evento_id = r.json()["id"]
 
-    resp = await client.get(f"/eventos/{evento_id}/modalidades/{uuid.uuid4()}/disponibilidad")
+    resp = await client.get(
+        f"/eventos/{evento_id}/modalidades/{uuid.uuid4()}/disponibilidad"
+    )
     assert resp.status_code == 404
 
 
@@ -73,24 +81,34 @@ async def test_reserva_general_ciclo_completo_y_disponibilidad(
     general_id = next(m["id"] for m in evento["modalidades"] if m["tipo"] == "general")
 
     # 1. Crear primera reserva general
-    res1 = await client.post(f"/eventos/{evento['id']}/modalidades/{general_id}/reservas")
+    res1 = await client.post(
+        f"/eventos/{evento['id']}/modalidades/{general_id}/reservas"
+    )
     assert res1.status_code == 201
     res1_id = res1.json()["reserva_id"]
 
     # Disponibilidad baja a 1
-    disp1 = await client.get(f"/eventos/{evento['id']}/modalidades/{general_id}/disponibilidad")
+    disp1 = await client.get(
+        f"/eventos/{evento['id']}/modalidades/{general_id}/disponibilidad"
+    )
     assert disp1.json() == {"disponibles": 1}
 
     # 2. Crear segunda reserva general (agota cupo)
-    res2 = await client.post(f"/eventos/{evento['id']}/modalidades/{general_id}/reservas")
+    res2 = await client.post(
+        f"/eventos/{evento['id']}/modalidades/{general_id}/reservas"
+    )
     assert res2.status_code == 201
 
     # Disponibilidad baja a 0
-    disp2 = await client.get(f"/eventos/{evento['id']}/modalidades/{general_id}/disponibilidad")
+    disp2 = await client.get(
+        f"/eventos/{evento['id']}/modalidades/{general_id}/disponibilidad"
+    )
     assert disp2.json() == {"disponibles": 0}
 
     # 3. Tercera reserva rechaza con 409 sin disponibilidad
-    res3 = await client.post(f"/eventos/{evento['id']}/modalidades/{general_id}/reservas")
+    res3 = await client.post(
+        f"/eventos/{evento['id']}/modalidades/{general_id}/reservas"
+    )
     assert res3.status_code == 409
     assert res3.json()["detail"] == "sin disponibilidad"
 
@@ -122,7 +140,6 @@ async def test_reserva_numerada_ciclo_completo_y_liberacion(
     evento = r.json()
     numerada = next(m for m in evento["modalidades"] if m["tipo"] == "numerado")
     asiento1 = numerada["sectores"][0]["asientos"][0]
-    asiento2 = numerada["sectores"][0]["asientos"][1]
 
     # 1. Reservar asiento 1
     res1 = await client.post(
@@ -175,7 +192,6 @@ async def test_idempotency_key_reintento_y_conflicto(
     general_id = next(m["id"] for m in evento["modalidades"] if m["tipo"] == "general")
     numerada = next(m for m in evento["modalidades"] if m["tipo"] == "numerado")
     asiento1 = numerada["sectores"][0]["asientos"][0]
-    asiento2 = numerada["sectores"][0]["asientos"][1]
 
     key = str(uuid.uuid4())
 
@@ -225,7 +241,8 @@ async def test_idempotency_key_rescate_ultimo_cupo(
     assert r2.status_code == 201
     r2_id = r2.json()["reserva_id"]
 
-    # Reintento cuando ya no hay cupo: rescata la reserva existente y devuelve 200 en vez de 409 sin disponibilidad
+    # Reintento cuando ya no hay cupo:
+    # rescata la reserva existente y devuelve 200 en vez de 409 sin disponibilidad
     r_retry = await client.post(
         f"/eventos/{evento['id']}/modalidades/{general_id}/reservas",
         headers={"Idempotency-Key": key_ultimo},
@@ -253,7 +270,8 @@ async def test_idempotency_key_rescate_mismo_asiento(
     assert r1.status_code == 201
     r1_id = r1.json()["reserva_id"]
 
-    # Reintento para el mismo asiento cuando ya está reservado: rescata la reserva y devuelve 200
+    # Reintento para el mismo asiento cuando ya está reservado:
+    # rescata la reserva y devuelve 200
     r_retry = await client.post(
         f"/eventos/{evento['id']}/modalidades/{numerada['id']}/reservas",
         headers={"Idempotency-Key": key_asiento},

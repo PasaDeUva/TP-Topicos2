@@ -104,7 +104,14 @@ def verify():
         "nombre": "Evento de verificacion",
         "venue": "Estadio de prueba",
         "fecha": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
-        "modalidades": [{"nombre": "General", "tipo": "general"}],
+        "modalidades": [
+            {
+                "nombre": "General",
+                "tipo": "general",
+                "precio": "1000.00",
+                "cupo": 100,
+            }
+        ],
     }, headers={"X-Correlation-Id": corr_alta}, expected=201)
     assert evento["activo"] is True
     assert [m["tipo"] for m in evento["modalidades"]] == ["general"]

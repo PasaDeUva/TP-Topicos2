@@ -1,6 +1,6 @@
+import uuid
 from datetime import datetime
 from decimal import Decimal
-import uuid
 
 from sqlalchemy import (
     Boolean,
@@ -49,7 +49,8 @@ class Modalidad(Base):
     __table_args__ = (
         CheckConstraint("tipo IN ('numerado', 'general')", name="ck_modalidades_tipo"),
         CheckConstraint(
-            "(tipo = 'general' AND precio IS NOT NULL AND precio >= 0 AND cupo IS NOT NULL AND cupo >= 0) "
+            "(tipo = 'general' AND precio IS NOT NULL AND precio >= 0 "
+            "AND cupo IS NOT NULL AND cupo >= 0) "
             "OR (tipo = 'numerado' AND precio IS NULL AND cupo IS NULL)",
             name="ck_modalidades_precio_cupo",
         ),
@@ -94,7 +95,9 @@ class Sector(Base):
     nombre: Mapped[str] = mapped_column(String(100), nullable=False)
     precio: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
 
-    modalidad: Mapped["Modalidad"] = relationship("Modalidad", back_populates="sectores")
+    modalidad: Mapped["Modalidad"] = relationship(
+        "Modalidad", back_populates="sectores"
+    )
     asientos: Mapped[list["Asiento"]] = relationship(
         "Asiento", back_populates="sector", cascade="all, delete-orphan"
     )
@@ -124,7 +127,9 @@ class Asiento(Base):
     estado: Mapped[str] = mapped_column(String(20), nullable=False, default="libre")
 
     sector: Mapped["Sector"] = relationship("Sector", back_populates="asientos")
-    reservas: Mapped[list["Reserva"]] = relationship("Reserva", back_populates="asiento")
+    reservas: Mapped[list["Reserva"]] = relationship(
+        "Reserva", back_populates="asiento"
+    )
 
 
 class Reserva(Base):
@@ -157,5 +162,9 @@ class Reserva(Base):
     )
     idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    modalidad: Mapped["Modalidad"] = relationship("Modalidad", back_populates="reservas")
-    asiento: Mapped["Asiento | None"] = relationship("Asiento", back_populates="reservas")
+    modalidad: Mapped["Modalidad"] = relationship(
+        "Modalidad", back_populates="reservas"
+    )
+    asiento: Mapped["Asiento | None"] = relationship(
+        "Asiento", back_populates="reservas"
+    )
