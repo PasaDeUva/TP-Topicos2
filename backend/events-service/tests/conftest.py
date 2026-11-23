@@ -90,6 +90,7 @@ async def concurrent_client(session_factory) -> AsyncGenerator[AsyncClient, None
             yield s
 
     app.dependency_overrides[get_session] = _get_concurrent_session
+    app.dependency_overrides[current_organizer] = lambda: TEST_OWNER_ID
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:
