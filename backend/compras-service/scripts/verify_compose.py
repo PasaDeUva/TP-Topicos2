@@ -105,8 +105,25 @@ def verify():
         "venue": "Estadio de prueba",
         "fecha": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
         "modalidades": [
-            {"nombre": "General", "tipo": "general"},
-            {"nombre": "Numerada", "tipo": "numerado"},
+            {
+                "nombre": "General",
+                "tipo": "general",
+                "precio": "1500.00",
+                "cupo": 100,
+            },
+            {
+                "nombre": "Numerada",
+                "tipo": "numerado",
+                "sectores": [
+                    {
+                        "nombre": "Sector A",
+                        "precio": "3000.00",
+                        "asientos": [
+                            {"fila": "1", "numero": 1},
+                        ],
+                    }
+                ],
+            },
         ],
     }, expected=201)
     assert event["activo"] is True
