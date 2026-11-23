@@ -51,6 +51,15 @@ stmt = (
 )
 result = await session.execute(stmt)
 if result.rowcount == 0:
+    # Consulta de rescate por idempotencia si concurrió con la misma clave
+    if idempotency_key:
+        reserva = await session.scalar(
+            select(Reserva).where(Reserva.idempotency_key == idempotency_key)
+        )
+        if reserva:
+            if reserva.modalidad_id == modalidad_id and reserva.asiento_id == payload.asiento_id:
+                return {"reserva_id": reserva.id}
+            raise HTTPException(status_code=409, detail="idempotency_conflict")
     raise HTTPException(status_code=409, detail="asiento no disponible")
 ```
 
@@ -78,6 +87,15 @@ ocupadas = await session.scalar(
     )
 )
 if ocupadas >= modalidad.cupo:
+    # Consulta de rescate por idempotencia si concurrió con la misma clave
+    if idempotency_key:
+        reserva = await session.scalar(
+            select(Reserva).where(Reserva.idempotency_key == idempotency_key)
+        )
+        if reserva:
+            if reserva.modalidad_id == modalidad_id and reserva.asiento_id is None:
+                return {"reserva_id": reserva.id}
+            raise HTTPException(status_code=409, detail="idempotency_conflict")
     raise HTTPException(status_code=409, detail="sin disponibilidad")
 ```
 
@@ -91,7 +109,22 @@ if ocupadas >= modalidad.cupo:
 - En la creación (`POST .../reservas`):
   - Soporte para cabecera opcional `Idempotency-Key` (hasta 255 caracteres).
   - La tabla `reservas` cuenta con la restricción `CONSTRAINT uq_reservas_idempotency_key UNIQUE (idempotency_key)`.
-  - Si dos solicitudes simultáneas envían la misma clave, una inserta la fila y la otra atrapa la excepción de unicidad (`IntegrityError`). La transacción perdedora rescata la reserva existente: si coincide en `modalidad_id` y en el asiento (o es general), responde de forma transparente con el `reserva_id` persistido; si difiere en modalidad o asiento responde `409 Conflict` (`idempotency_conflict`).
+  - Rescate previo ante falta de cupo o asiento ocupado: si la disponibilidad o el `UPDATE` condicional del asiento fallan, antes de devolver 409 se verifica si ya existe una reserva con dicha clave para retornar la reserva ganadora original si el payload coincide.
+  - Inserción protegida por Savepoint (`session.begin_nested()`):
+    ```python
+    try:
+        async with session.begin_nested():
+            session.add(nueva_reserva)
+            await session.flush()
+    except IntegrityError:
+        # El savepoint revierte el INSERT fallido dejando la sesión activa
+        reserva = await session.scalar(
+            select(Reserva).where(Reserva.idempotency_key == idempotency_key)
+        )
+        if reserva and reserva.modalidad_id == modalidad_id and reserva.asiento_id == payload.asiento_id:
+            return {"reserva_id": reserva.id}
+        raise HTTPException(status_code=409, detail="idempotency_conflict")
+    ```
 - En la confirmación (`POST .../confirmar`):
   ```python
   reserva = await session.scalar(

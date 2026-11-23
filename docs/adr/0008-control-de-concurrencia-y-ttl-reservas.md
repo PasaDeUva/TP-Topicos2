@@ -24,12 +24,13 @@ Asimismo, de acuerdo con [ADR-0006](0006-flujo-de-compra-completo.md), las reser
      2. Para cada reserva con `asiento_id`, se bloquea el asiento (`SELECT ... FROM asientos WHERE id = :asiento_id FOR UPDATE`), verificando que pertenezca a la reserva y su estado sea `reservado` antes de actualizar a `libre`.
    - La reserva efectiva se ejecuta con la sentencia atómica condicional:
      `UPDATE asientos SET estado = 'reservado' WHERE id = :asiento_id AND estado = 'libre'`
-   - Si la sentencia afecta 0 filas, se responde `409 Conflict`.
+   - Si la sentencia afecta 0 filas, se responde `409 Conflict` (salvo que exista una reserva previa asociada a la `Idempotency-Key`, en cuyo caso se reconcilia el resultado).
 
 3. **Mecanismo de expiración por TTL (Time-To-Live) e Idempotencia:**
    - Cada reserva se crea con `expira_en = NOW() + interval '10 minutes'` (configurable vía `RESERVA_TTL_MINUTES`).
    - `POST .../reservas` admite cabecera opcional `Idempotency-Key` (hasta 255 caracteres) respaldada por una restricción de unicidad global `CONSTRAINT uq_reservas_idempotency_key UNIQUE (idempotency_key)` en la tabla `reservas`:
-     - Ante reintentos o llamadas concurrentes con la misma clave y payload equivalente, se serializa la inserción en base de datos; la transacción que atrape colisión de clave única (`IntegrityError`) recupera la reserva existente y retorna el `reserva_id` preexistente sin duplicar reservas ni sobreconsumir cupo.
+     - Rescate ante contienda por último cupo o asiento: si la comprobación de cupo general o la actualización condicional de asiento detectan falta de disponibilidad, si la solicitud incluye `Idempotency-Key` se verifica primero si la clave ya fue registrada por una transacción simultánea. Si coincide el payload, se retorna el `reserva_id` ganador en lugar de emitir un 409 espurio.
+     - Aislamiento en inserción con Savepoint: el `INSERT` se ejecuta bajo un savepoint transaccional (`session.begin_nested()`). Ante colisión de unicidad concurrente (`IntegrityError`), el savepoint revierte únicamente el insert fallido manteniendo la sesión de PostgreSQL limpia para consultar la reserva ganadora y reconciliar la respuesta de forma idéntica sin sobreconsumir inventario.
      - Si la clave se reutiliza para una modalidad distinta o con datos divergentes (otro asiento), responde `409 Conflict` (`idempotency_conflict`).
    - En las consultas de disponibilidad y confirmación:
      - Disponibilidad contabiliza como libres los asientos que ya están `libre` o cuya reserva activa haya expirado.

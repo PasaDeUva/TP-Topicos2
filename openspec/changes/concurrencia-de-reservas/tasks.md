@@ -9,7 +9,7 @@
 
 - [ ] 2.1 Implementar la liberación perezosa con orden canónico de locks (`reservas` luego `asientos`) y la reserva atómica condicional de asientos numerados (`UPDATE asientos SET estado = 'reservado' WHERE id = :id AND estado = 'libre'`) en `backend/events-service/app/routers.py`; verificar con test de concurrencia paralelo en `tests/test_concurrencia.py` que solicitudes simultáneas sobre el mismo asiento resulten en un único 201 y el resto 409.
 - [ ] 2.2 Implementar el aislamiento transaccional con `with_for_update()` en la reserva de modalidad general y cómputo de ocupación (`confirmadas + activas vigentes`) en `backend/events-service/app/routers.py`; verificar con test de concurrencia en `tests/test_concurrencia.py` que compras posteriores a confirmaciones no excedan el cupo.
-- [ ] 2.3 Implementar el manejo concurrente de `Idempotency-Key` en `POST .../reservas` atrapando excepciones de unicidad (`IntegrityError`) para retornar la reserva ganadora sin duplicar cupo o rechazar con 409 si los datos difieren; verificar con test de concurrencia en `tests/test_concurrencia.py`.
+- [ ] 2.3 Implementar el manejo concurrente de `Idempotency-Key` en `POST .../reservas` incorporando consulta de rescate previa al 409 ante falta de cupo o asiento ocupado, y savepoint `session.begin_nested()` en el `INSERT` para atrapar colisiones de unicidad (`IntegrityError`) retornando la reserva ganadora sin duplicar cupo o 409 ante payloads discordantes; verificar con tests de concurrencia para último cupo y mismo asiento en `tests/test_concurrencia.py`.
 
 ## 3. Lógica y Validación de Expiración por TTL
 

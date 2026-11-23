@@ -19,6 +19,11 @@ El sistema MUST procesar las reservas de modalidad general garantizando que ning
 - **WHEN** se envía una solicitud `POST .../reservas`
 - **THEN** el sistema responde con código 409 Conflict y no incrementa las reservas persistidas
 
+#### Scenario: Reintento concurrente con misma clave sobre el último cupo
+- **GIVEN** una modalidad general con cupo remanente igual a 1
+- **WHEN** concurren en paralelo dos solicitudes `POST .../reservas` enviando la misma `Idempotency-Key` y payload idéntico
+- **THEN** ambas solicitudes obtienen el `reserva_id` ganado por la primera transacción sin responder 409 ni violar el cupo
+
 ### Requirement: Exclusión mutua atómica en modalidad numerada
 El sistema MUST garantizar la asignación exclusiva y atómica de cada asiento en modalidades numeradas mediante actualización condicionada al estado `libre`. Si múltiples solicitudes compiten en simultáneo por el mismo `asiento_id`, exactamente una SHALL resultar exitosa y las restantes MUST ser rechazadas con código 409 Conflict.
 
@@ -26,6 +31,11 @@ El sistema MUST garantizar la asignación exclusiva y atómica de cada asiento e
 - **GIVEN** un asiento numerado en estado `libre`
 - **WHEN** se envían concurrentemente múltiples solicitudes de reserva referenciando ese mismo `asiento_id`
 - **THEN** únicamente una solicitud obtiene respuesta 201 Created y el asiento pasa a estado `reservado`, mientras que las restantes reciben código 409 Conflict
+
+#### Scenario: Reintento concurrente con misma clave sobre el mismo asiento
+- **GIVEN** un asiento numerado en estado `libre`
+- **WHEN** concurren en paralelo dos solicitudes `POST .../reservas` con la misma `Idempotency-Key` solicitando ese asiento
+- **THEN** ambas solicitudes obtienen el `reserva_id` ganado por la primera transacción sin responder 409 ni alterar el asiento
 
 #### Scenario: Rechazo de reserva de asiento no libre
 - **GIVEN** un asiento numerado con estado `reservado` o `vendido`

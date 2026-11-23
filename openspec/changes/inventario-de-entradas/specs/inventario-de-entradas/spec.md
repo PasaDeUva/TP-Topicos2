@@ -41,6 +41,16 @@ El sistema SHALL permitir reservar una entrada mediante `POST /eventos/{evento_i
 - **WHEN** el cliente envía o concurre con una solicitud `POST .../reservas` con la misma `Idempotency-Key` y el mismo payload
 - **THEN** el sistema responde con el `reserva_id` original sin crear reservas adicionales ni duplicar la ocupación
 
+#### Scenario: Reintento concurrente compitiendo por el último cupo en modalidad general
+- **GIVEN** una modalidad general con cupo disponible remanente exactamente igual a 1
+- **WHEN** concurren simultáneamente dos solicitudes `POST .../reservas` con la misma `Idempotency-Key` y el mismo payload
+- **THEN** ambas solicitudes obtienen el `reserva_id` ganador original sin que la segunda responda 409 Conflict ni exceda el cupo
+
+#### Scenario: Reintento concurrente compitiendo por el mismo asiento numerado
+- **GIVEN** un asiento numerado en estado `libre`
+- **WHEN** concurren simultáneamente dos solicitudes `POST .../reservas` intentando reservar dicho `asiento_id` con la misma `Idempotency-Key`
+- **THEN** ambas solicitudes obtienen el `reserva_id` ganador original sin que la segunda responda 409 Conflict ni altere el asiento
+
 #### Scenario: Conflicto por reutilización de Idempotency-Key con datos divergentes
 - **GIVEN** una reserva creada previamente con una cabecera `Idempotency-Key`
 - **WHEN** el cliente envía `POST .../reservas` reutilizando dicha `Idempotency-Key` pero con datos distintos (otro `asiento_id` u otra modalidad)

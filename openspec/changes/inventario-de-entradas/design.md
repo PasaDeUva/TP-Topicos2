@@ -111,14 +111,15 @@ Se incorporan 4 endpoints bajo el router de eventos en `events-service`:
    - Retorna `200 {"disponibles": <int>}` o `404`.
 2. `POST /eventos/{id}/modalidades/{mid}/reservas`:
    - Acepta cabecera opcional `Idempotency-Key` (hasta 255 caracteres).
-   - Si se recibe `Idempotency-Key` (búsqueda global en tabla `reservas`):
-     - Si ya existe una reserva con dicha clave:
+   - Manejo integral de idempotencia ante reintentos y concurrencia:
+     - Si ya existe una reserva previa con dicha clave (búsqueda global en tabla `reservas`):
        - Si coincide en `modalidad_id` y en los datos del payload (mismo asiento o general): retorna `200 OK` (o `201`) con `{"reserva_id": "<uuid>"}` original sin reservar nuevamente.
        - Si difiere en `modalidad_id` o en el payload (otro asiento): responde `409 Conflict` (`idempotency_conflict`).
-     - Si concurren solicitudes simultáneas con la misma clave: la restricción `uq_reservas_idempotency_key` garantiza que solo una inserción proceda; la transacción perdedora atrapa la violación de unicidad (`IntegrityError`), recupera la reserva ganadora y reconcilia la respuesta idéntica o rechaza con 409 si difiere.
+     - Carrera concurrente por el último cupo o mismo asiento: si la comprobación de disponibilidad encuentra cupo agotado o si el `UPDATE` condicional de asiento afecta 0 filas, antes de emitir un 409 se consulta si existe una reserva asociada a la `Idempotency-Key`. Si existe y coincide, se retorna el `reserva_id` ganado por la transacción simultánea en lugar de responder un conflicto incorrecto.
+     - Inserción atómica con Savepoint: la inserción de la reserva se encapsula en `async with session.begin_nested():`. Ante colisión concurrente en `uq_reservas_idempotency_key` (`IntegrityError`), el savepoint revierte únicamente el `INSERT` fallido sin invalidar la transacción de PostgreSQL, permitiendo consultar la reserva ganadora y reconciliar la respuesta de forma idéntica o rechazar con 409 ante payloads discordantes.
    - En `general`: valida disponibilidad > 0, crea reserva activa con `expira_en` y la clave de idempotencia, retorna `201 {"reserva_id": "<uuid>"}`.
    - En `numerado`: requiere body `{"asiento_id": "<uuid>"}`, valida asiento libre, actualiza asiento a `reservado`, crea reserva activa con `asiento_id`, `expira_en` y la clave, retorna `201 {"reserva_id": "<uuid>"}`.
-   - Si no hay disponibilidad o el asiento no está libre: responde `409 {"detail": "sin disponibilidad"}` o `409 {"detail": "asiento no disponible"}`.
+   - Si no hay disponibilidad o el asiento no está libre (y no existe reserva previa para la clave): responde `409 {"detail": "sin disponibilidad"}` o `409 {"detail": "asiento no disponible"}`.
 3. `DELETE /eventos/{id}/modalidades/{mid}/reservas/{reserva_id}`:
    - Aplica orden canónico de locks (`reservas` luego `asientos`).
    - Si la reserva ya está `liberada` o `confirmada`: rechaza con `409 Conflict`.
