@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 
 class CompraIn(BaseModel):
-    cliente_id: uuid.UUID
+    cliente_id: uuid.UUID | None = None
     evento_id: uuid.UUID
     modalidad_id: uuid.UUID
 

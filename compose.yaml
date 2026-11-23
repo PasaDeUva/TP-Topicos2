@@ -155,10 +155,19 @@ services:
       context: ./backend/events-service
     environment:
       DATABASE_URL: postgresql+psycopg://events:events@events-db:5432/events_db
+      APP_ENV: ${CONSUMER_ENV:-production}
+      IDENTITY_ALLOW_LOCAL_HTTP: ${IDENTITY_ALLOW_LOCAL_HTTP:-false}
+      IDENTITY_URL: ${IDENTITY_SERVICE_URL:-}
+      IDENTITY_PUBLIC_KEY_PATH: /keys/public/public.pem
+      IDENTITY_ISSUER: ${IDENTITY_JWT_ISSUER:-identity-local}
+      IDENTITY_AUDIENCE: ${IDENTITY_JWT_AUDIENCE:-platform-local}
+      IDENTITY_SERVICE_TOKEN: ${IDENTITY_EVENTS_SERVICE_TOKEN:-}
+      IDENTITY_TIMEOUT_SECONDS: ${IDENTITY_TIMEOUT_SECONDS:-0.8}
     ports:
       - "${EVENTS_SERVICE_HOST_PORT:-8001}:8000"
     volumes:
       - ./backend/events-service:/app
+      - identity-public-keys:/keys/public:ro
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     depends_on:
       events-db:
@@ -187,10 +196,19 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://compras:compras@compras-db:5432/compras_db
       EVENTS_SERVICE_URL: http://events-service:8000
+      APP_ENV: ${CONSUMER_ENV:-production}
+      IDENTITY_ALLOW_LOCAL_HTTP: ${IDENTITY_ALLOW_LOCAL_HTTP:-false}
+      IDENTITY_URL: ${IDENTITY_SERVICE_URL:-}
+      IDENTITY_PUBLIC_KEY_PATH: /keys/public/public.pem
+      IDENTITY_ISSUER: ${IDENTITY_JWT_ISSUER:-identity-local}
+      IDENTITY_AUDIENCE: ${IDENTITY_JWT_AUDIENCE:-platform-local}
+      IDENTITY_SERVICE_TOKEN: ${IDENTITY_PURCHASES_SERVICE_TOKEN:-}
+      IDENTITY_TIMEOUT_SECONDS: ${IDENTITY_TIMEOUT_SECONDS:-0.8}
     ports:
       - "${COMPRAS_SERVICE_HOST_PORT:-8003}:8000"
     volumes:
       - ./backend/compras-service:/app
+      - identity-public-keys:/keys/public:ro
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     depends_on:
       compras-db:

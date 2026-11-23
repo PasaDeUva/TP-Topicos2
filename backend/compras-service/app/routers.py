@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.events_client import EventsClient, EventsServiceError, get_events_client
+from app.identity import current_customer
 from app.models import Compra
 from app.schemas import CompraIn, CompraOut
 
@@ -39,12 +40,15 @@ def _responder_existente(
 
 @router.get("", response_model=list[CompraOut])
 async def listar_compras(
-    cliente_id: uuid.UUID = Query(...),
+    cliente_id: uuid.UUID | None = Query(None),
+    customer: uuid.UUID = Depends(current_customer),
     session: AsyncSession = Depends(get_session),
 ):
+    if cliente_id is not None and cliente_id != customer:
+        raise HTTPException(status_code=403, detail="forbidden")
     result = await session.execute(
         select(Compra)
-        .where(Compra.cliente_id == cliente_id)
+        .where(Compra.cliente_id == customer)
         .order_by(Compra.creado_en.desc())
     )
     return result.scalars().all()
@@ -52,10 +56,12 @@ async def listar_compras(
 
 @router.get("/{compra_id}", response_model=CompraOut)
 async def obtener_compra(
-    compra_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+    compra_id: uuid.UUID,
+    customer: uuid.UUID = Depends(current_customer),
+    session: AsyncSession = Depends(get_session),
 ):
     compra = await session.get(Compra, compra_id)
-    if compra is None:
+    if compra is None or compra.cliente_id != customer:
         raise HTTPException(status_code=404, detail="not found")
     return compra
 
@@ -66,10 +72,13 @@ async def crear_compra(
     response: Response,
     request: Request,
     idempotency_key: str = Header(..., min_length=1, max_length=255),
+    customer: uuid.UUID = Depends(current_customer),
     session: AsyncSession = Depends(get_session),
     events_client: EventsClient = Depends(get_events_client),
 ):
-    existente = await _buscar_por_clave(session, payload.cliente_id, idempotency_key)
+    if payload.cliente_id is not None and payload.cliente_id != customer:
+        raise HTTPException(status_code=403, detail="forbidden")
+    existente = await _buscar_por_clave(session, customer, idempotency_key)
     if existente is not None:
         return _responder_existente(existente, payload, response)
 
@@ -95,7 +104,7 @@ async def crear_compra(
         raise HTTPException(status_code=409, detail="modalidad no disponible")
 
     compra = Compra(
-        cliente_id=payload.cliente_id,
+        cliente_id=customer,
         evento_id=payload.evento_id,
         modalidad_id=payload.modalidad_id,
         idempotency_key=idempotency_key,
@@ -106,9 +115,7 @@ async def crear_compra(
     except IntegrityError:
         # Otra solicitud con la misma clave ganó la carrera: releer y comparar.
         await session.rollback()
-        existente = await _buscar_por_clave(
-            session, payload.cliente_id, idempotency_key
-        )
+        existente = await _buscar_por_clave(session, customer, idempotency_key)
         if existente is None:
             raise
         return _responder_existente(existente, payload, response)
