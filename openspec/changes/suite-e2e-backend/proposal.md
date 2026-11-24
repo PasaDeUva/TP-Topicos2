@@ -6,21 +6,15 @@ La verificación de integración entre `identity-service`, `events-service` y `c
 
 ## What Changes
 
-- **Suite modular bajo `backend/suite-e2e-backend/`**:
-  - `backend/suite-e2e-backend/harness/`: Módulos de infraestructura reutilizables para gestión del ciclo de vida de Docker Compose aislado (`environment.py`), cliente HTTP estándar (`client.py`), contexto compartido (`context.py`), utilidades de orquestación (`compose.py`) y auditoría de no exposición de secretos (`security.py`).
-  - `backend/suite-e2e-backend/scenarios/`: Escenarios de prueba multiservicio desacoplados:
-    - `test_auth_and_roles.py`: Registro, login, aprobación de organizadores por admin y aislamiento de propiedad de eventos.
-    - `test_compra_exitosa.py`: Compra válida con token cliente, idempotencia repetida, consulta de compras y correlación de IDs en logs estructurados.
-    - `test_compra_fallida.py`: Conflicto de idempotencia por payload alterado (409), aislamiento de compras entre clientes (404), compra sobre evento inexistente (404) y rechazo de compras no autenticadas (401).
-    - `test_session_lifecycle.py`: Revocación inmediata de sesión por logout e invalidación de token (401), y deshabilitación administrativa de organizadores (403).
-    - `test_resilience_and_logs.py`: Token interservicio incorrecto (503), indisponibilidad de Identity (503) y auditoría de bitácoras sin filtración de secretos.
-    - `test_rollback.py`: Soporte opcional de verificación de rollback si se especifica `--rollback-ref`.
-  - `backend/suite-e2e-backend/run_e2e.py`: Ejecutor CLI con reporte detallado por escenario, captura de bitácoras redactadas ante errores y soporte de ejecución selectiva con `--scenario`.
+- **Escenarios aislados por servicio** dentro de `backend/events-service/scripts/verify_compose.py` y `backend/compras-service/scripts/verify_compose.py`: cada archivo contiene el código de sus escenarios (eventos: catálogo público, escritura protegida, propiedad/baja lógica, inventario y reservas; compras: autenticación, validación de entrada, idempotencia y propiedad) y reutiliza el arnés compartido.
+- **Suite multiservicio en `backend/suite-e2e-backend/`** para validar la orquestación entre Identity, Events y Compras:
+  - `harness/`: arnés compartido (Compose aislado, cliente HTTP, contexto, runner común y auditoría de secretos).
+  - `scenarios/`: `test_compra_exitosa`, `test_compra_fallida` (evento inexistente/inactivo, cupo agotado), `test_session_lifecycle`, `test_resilience_and_logs` y `test_rollback`.
+  - `run_e2e.py`: ejecutor con reporte por escenario, `--scenario` y `--rollback-ref`.
 - **Compatibilidad y gobernanza**:
-  - Mantener `backend/verify_identity_integration.py` como envoltorio compatible que invoca el nuevo ejecutor.
-  - Actualizar los scripts de verificación de servicios (`backend/compras-service/scripts/verify_compose.py` y `backend/events-service/scripts/verify_compose.py`).
-  - Actualizar `.github/workflows/ci.yml` para ejecutar la nueva suite e incluirla en el linter Ruff.
-  - Documentar la arquitectura en [ADR-0014: Suite E2E y de integración multiservicio en backend](../../docs/adr/0014-suite-e2e-backend.md).
+  - Eliminar el script monolítico `backend/verify_identity_integration.py` (su lógica se reparte entre los escenarios aislados y la suite multiservicio).
+  - Actualizar `.github/workflows/ci.yml`: Ruff incluye `suite-e2e-backend`, cada `verify_compose.py` corre como paso propio y la suite multiservicio corre una sola vez.
+  - Documentar la decisión en [ADR-0014](../../../docs/adr/0014-suite-e2e-backend.md).
 
 ## Capabilities
 
@@ -32,7 +26,7 @@ La verificación de integración entre `identity-service`, `events-service` y `c
 
 ## Impact
 
-- **Código y pruebas**: Creación del paquete `backend/suite-e2e-backend/`, preservando compatibilidad de `backend/verify_identity_integration.py`.
-- **Scripts de integración**: `backend/compras-service/scripts/verify_compose.py` y `backend/events-service/scripts/verify_compose.py`.
+- **Código y pruebas**: Creación del paquete `backend/suite-e2e-backend/` y eliminación de `backend/verify_identity_integration.py`.
+- **Scripts de integración**: `backend/compras-service/scripts/verify_compose.py` y `backend/events-service/scripts/verify_compose.py` pasan a contener sus escenarios aislados.
 - **CI/CD**: `.github/workflows/ci.yml` en los pasos de lint y ejecución de pruebas E2E.
 - **Dependencias**: Ninguna; se mantiene el uso exclusivo de la biblioteca estándar de Python sin requerir dependencias adicionales en el host.

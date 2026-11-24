@@ -14,33 +14,27 @@ Este enfoque presentaba desventajas importantes:
 
 ## Decisión
 
-Se decide refactorizar la prueba de integración hacia una suite modular bajo `backend/suite-e2e-backend/`, organizada de la siguiente manera:
+Se separan las verificaciones de caja negra en dos niveles, ambos sobre un Compose aislado y con biblioteca estándar de Python:
 
-1. **Arnés de infraestructura (`backend/suite-e2e-backend/harness/`):**
-   - Gestión de ciclo de vida del entorno Docker Compose aislado y temporal (`environment.py`).
-   - Cliente HTTP y aserciones de respuesta (`client.py`).
-   - Contexto compartido de ejecución con URLs, secretos y utilidades de ayuda (`context.py`).
-   - Auditoría de seguridad de bitácoras para prevenir fuga de credenciales (`security.py`).
+1. **Escenarios aislados por servicio (`backend/<servicio>/scripts/verify_compose.py`):**
+   - El código de los escenarios vive dentro de cada `verify_compose.py` y solo ejercita endpoints y reglas propias del servicio (ADR-0012).
+   - `events-service`: catálogo público, escritura protegida (401/403), propiedad y baja lógica, inventario y reservas.
+   - `compras-service`: autenticación requerida (401/403), validación de entrada (422/403), idempotencia y propiedad de compras.
+   - Identity interviene solo como emisor de tokens y events-service solo como fuente de datos; no se valida orquestación.
 
-2. **Escenarios multiservicio (`backend/suite-e2e-backend/scenarios/`):**
-   - Pruebas independientes para cada flujo de negocio o de infraestructura:
-     - `test_auth_and_roles.py`: Registro, login, habilitación de organizadores y aislamiento de eventos por organizador (Identity + Events).
-     - `test_compra_exitosa.py`: Compra válida, idempotencia exitosa, consulta de compras y correlación de IDs en bitácoras (Identity + Events + Compras).
-     - `test_compra_fallida.py`: Conflictos de idempotencia con diferente carga útil, aislamiento entre clientes, compra sobre eventos inexistentes y accesos no autenticados (Identity + Events + Compras).
-     - `test_session_lifecycle.py`: Revocación inmediata de tokens por logout y deshabilitación administrativa de organizadores (Identity + Events + Compras).
-     - `test_resilience_and_logs.py`: Falla de token de servicio, indisponibilidad de Identity Service (503) y auditoría de no exposición de secretos en bitácoras (Identity + Events + Compras).
-     - `test_rollback.py`: Validación opcional de reversión a revisiones previas si se suministra `--rollback-ref`.
+2. **Escenarios multiservicio (`backend/suite-e2e-backend/scenarios/`):** validan la orquestación entre servicios.
+   - `test_compra_exitosa.py`: compra, descuento de inventario en events, idempotencia sin doble consumo y trazabilidad de `X-Correlation-Id`.
+   - `test_compra_fallida.py`: evento/modalidad inexistente, evento inactivo y cupo agotado propagados desde events sin persistir la compra.
+   - `test_session_lifecycle.py`: revocación por logout y deshabilitación de organizador.
+   - `test_resilience_and_logs.py`: token interservicio inválido, caída de Identity (503) y cero filtraciones en logs.
+   - `test_rollback.py`: reversión opcional con `--rollback-ref`.
 
-3. **Ejecutor (`backend/suite-e2e-backend/run_e2e.py`):**
-   - Ejecuta todos los escenarios de forma secuencial reportando el estado (`PASSED` / `FAILED`) y duración de cada uno.
-   - Utiliza exclusivamente la biblioteca estándar de Python (sin dependencias externas en el host).
-   - En caso de falla, captura y emite la bitácora redactada de los contenedores para facilitar el diagnóstico.
-   - Admite filtro de escenarios individuales mediante `--scenario` y soporte de `--rollback-ref`.
+3. **Arnés compartido (`backend/suite-e2e-backend/harness/`):** ciclo de vida de Compose (`environment.py`), cliente HTTP (`client.py`), contexto con helpers `ensure_*` (`context.py`), runner común (`runner.py`) y auditoría de secretos (`security.py`). Los `verify_compose.py` lo importan agregando la carpeta al `sys.path`.
 
-4. **Compatibilidad:**
-   - Se mantiene un archivo de compatibilidad en `backend/verify_identity_integration.py` que delega la ejecución al nuevo ejecutor para no romper herramientas existentes.
-   - Se actualizan las referencias en `.github/workflows/ci.yml` y en los scripts delegadores de los servicios (`backend/compras-service/scripts/verify_compose.py` y `backend/events-service/scripts/verify_compose.py`).
-
+4. **Ejecución y compatibilidad:**
+   - `run_e2e.py` ejecuta los escenarios multiservicio, con `--scenario` y `--rollback-ref`.
+   - El script monolítico `backend/verify_identity_integration.py` se elimina; su lógica queda repartida entre los escenarios aislados de cada servicio y la suite multiservicio.
+   - CI ejecuta cada `verify_compose.py` como paso propio y `run_e2e.py` una sola vez; no hay escenarios duplicados entre niveles.
 ## Consecuencias
 
 ### Positivas

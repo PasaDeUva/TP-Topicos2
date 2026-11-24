@@ -60,7 +60,7 @@ jobs:
         run: docker compose run --rm compras-service alembic check
 
       - name: Lint backend
-        run: docker compose run --rm --no-deps backend-tests python -m ruff check events-service identity-service compras-service verify_identity_integration.py
+        run: docker compose run --rm --no-deps backend-tests python -m ruff check events-service identity-service compras-service suite-e2e-backend
 
       - name: Test backend
         run: docker compose run --rm --no-deps backend-tests
@@ -68,8 +68,14 @@ jobs:
       - name: Test Identity Compose integration
         run: python backend/identity-service/scripts/verify_compose.py
 
+      - name: Test Events Compose integration
+        run: python backend/events-service/scripts/verify_compose.py
+
+      - name: Test Compras Compose integration
+        run: python backend/compras-service/scripts/verify_compose.py
+
       - name: Test Identity, Events and Purchases end-to-end
-        run: python backend/verify_identity_integration.py
+        run: python backend/suite-e2e-backend/run_e2e.py
 
       - name: Lint web application
         run: docker compose run --rm --no-deps web-app npm run lint

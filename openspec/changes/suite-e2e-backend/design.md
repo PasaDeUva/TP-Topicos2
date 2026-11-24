@@ -9,7 +9,7 @@ El entorno de ejecución en el host y en CI no cuenta necesariamente con `pytest
 
 **Goals:**
 - Separar la lógica de infraestructura (Docker Compose, HTTP, logging, seguridad) de los casos de prueba de negocio.
-- Crear módulos de prueba independientes para cada flujo multiservicio (autenticación y roles, compras exitosas, compras fallidas, ciclo de vida de sesiones y resiliencia).
+- Alojar los escenarios aislados de cada servicio en su `verify_compose.py` y reservar `suite-e2e-backend` para escenarios multiservicio (compras exitosas/fallidas, sesiones, resiliencia).
 - Mantener un tiempo de ejecución eficiente reutilizando el entorno Compose temporal para la secuencia de pruebas sin reconstruir contenedores por cada escenario individual.
 - Emitir reportes comprensibles con indicación de estado (`PASSED`/`FAILED`), tiempos por escenario y bitácoras redactadas en caso de error.
 - Preservar compatibilidad con scripts delegadores existentes y con el workflow de CI.
@@ -28,14 +28,13 @@ Se organiza el paquete en dos áreas funcionales:
   - `context.py`: Objeto `E2EContext` que mantiene la configuración, credenciales, URLs base dinámicas y referencias a entidades creadas durante el flujo.
   - `environment.py`: Administrador de contexto (`contextmanager`) que genera el directorio temporal, copia el código de los servicios, normaliza finales de línea a LF, levanta los contenedores con `--wait` y asegura la destrucción de volúmenes en `finally`.
   - `security.py`: Verificación de que ninguna contraseña, token de servicio o JWT se registre en texto plano en los logs de los contenedores.
-- `backend/suite-e2e-backend/scenarios/`:
-  - `test_auth_and_roles.py`: Registro y login de organizadores/clientes, habilitación por admin, y aislamiento de propiedad de eventos.
-  - `test_compra_exitosa.py`: Compra válida, idempotencia exitosa, consulta de compras y trazabilidad de `X-Correlation-Id`.
-  - `test_compra_fallida.py`: Conflicto de idempotencia (409), aislamiento entre clientes (404), compra sobre evento inexistente (404) y rechazo no autenticado (401).
+  - `runner.py`: `run_scenarios()` común que levanta el entorno, ejecuta los escenarios en orden y reporta `PASSED`/`FAILED` con tiempos.
+- `backend/suite-e2e-backend/scenarios/` (solo escenarios **multiservicio**):
+  - `test_compra_exitosa.py`: Compra, descuento de inventario en events, idempotencia sin doble consumo y trazabilidad de `X-Correlation-Id`.
+  - `test_compra_fallida.py`: Evento/modalidad inexistente (404), evento inactivo (409) y cupo agotado (409) propagados desde events sin persistir la compra.
   - `test_session_lifecycle.py`: Revocación inmediata por logout (401) y deshabilitación administrativa de organizadores (403).
   - `test_resilience_and_logs.py`: Token interservicio incorrecto (503), indisponibilidad de Identity (503) y auditoría de bitácoras sin filtraciones.
   - `test_rollback.py`: Verificación de compatibilidad con versiones previas ante `--rollback-ref`.
-
 *Alternativa considerada:* Mantener un único script monolítico. Descartada por la imposibilidad de aislar fallos y la dificultad de mantenimiento.
 
 ### 2. Ejecución con biblioteca estándar en el host
@@ -48,11 +47,16 @@ Levantar y reconstruir los contenedores para cada escenario individual penalizar
 ### 4. Aislamiento respecto a `backend-tests`
 `Dockerfile.tests` inspecciona subdirectorios en `backend/` ejecutando pytest en aquellos que posean una carpeta `tests/`. Al ubicar las pruebas en `backend/suite-e2e-backend/scenarios/` (sin subcarpeta `tests/`), el contenedor de tests unitarios ignora `suite-e2e-backend/` automáticamente sin necesidad de parches frágiles.
 
+### 5. Escenarios aislados dentro de cada `verify_compose.py`
+Para mantener la coherencia con ADR-0012, el código de los escenarios aislados vive en el propio `scripts/verify_compose.py` de cada servicio y reutiliza el arnés compartido (agrega `backend/suite-e2e-backend` al `sys.path` e importa `harness`):
+- `events-service`: catálogo público, escritura protegida (401/403), propiedad y baja lógica, inventario y reservas.
+- `compras-service`: autenticación requerida (401/403), validación de entrada (422/403), idempotencia y propiedad de compras.
+- Identity actúa solo como emisor de tokens y events-service como fuente de datos; la orquestación entre servicios se valida únicamente en `suite-e2e-backend`, sin escenarios duplicados entre niveles.
+- Los helpers `ensure_*`/`create_event` de `E2EContext` aprovisionan los datos mínimos que cada escenario necesita.
+- CI ejecuta cada `verify_compose.py` como paso propio y `run_e2e.py` una sola vez.
 ## Risks / Trade-offs
 
 - **[Riesgo] Contaminación de estado entre escenarios en el Compose compartido:**
   *Mitigación:* Cada escenario utiliza identificadores y credenciales generados aleatoriamente (`uuid.uuid4()`), garantizando independencia entre pruebas.
 - **[Riesgo] Fuga de credenciales en salidas de consola ante fallos:**
   *Mitigación:* Toda salida de logs de contenedor capturada en caso de error es filtrada mediante `redact_logs()` antes de imprimirse.
-- **[Riesgo] Desincronización con scripts delegadores:**
-  *Mitigación:* Mantener `backend/verify_identity_integration.py` como wrapper retrocompatible que ejecuta `run_e2e.main()`, y actualizar `verify_compose.py` en `events-service` y `compras-service`.
