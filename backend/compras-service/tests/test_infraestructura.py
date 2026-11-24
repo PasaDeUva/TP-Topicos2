@@ -5,7 +5,7 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from app.events_client import EventsClient, EventsServiceError
+from app.events_client import EventsClient, EventsConflictError, EventsServiceError
 from app.schemas import CompraIn
 from tests.conftest import TEST_CUSTOMER_ID
 
@@ -76,3 +76,40 @@ def test_compra_in_rechaza_uuid_invalido_y_campos_faltantes():
         )
     with pytest.raises(ValidationError):
         CompraIn(cliente_id=str(uuid.uuid4()), evento_id=str(uuid.uuid4()))
+
+
+async def test_cliente_reservar_confirmar_y_liberar():
+    reserva_mock_id = str(uuid.uuid4())
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/reservas") and request.method == "POST":
+            return httpx.Response(201, json={"reserva_id": reserva_mock_id})
+        if path.endswith("/confirmar") and request.method == "POST":
+            return httpx.Response(200, json={"status": "confirmada"})
+        if "/reservas/" in path and request.method == "DELETE":
+            return httpx.Response(200, json={"status": "liberada"})
+        return httpx.Response(404)
+
+    cliente = _cliente_con(handler)
+    eid = uuid.uuid4()
+    mid = uuid.uuid4()
+    rid = await cliente.reservar_entrada(
+        eid, mid, idempotency_key="k", correlation_id="c"
+    )
+    assert str(rid) == reserva_mock_id
+
+    confirmado = await cliente.confirmar_reserva(eid, mid, rid, correlation_id="c")
+    assert confirmado is True
+
+    liberado = await cliente.liberar_reserva(eid, mid, rid, correlation_id="c")
+    assert liberado is True
+
+
+async def test_cliente_reservar_lanza_conflict_ante_409():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(409, json={"detail": "sin disponibilidad"})
+
+    cliente = _cliente_con(handler)
+    with pytest.raises(EventsConflictError):
+        await cliente.reservar_entrada(uuid.uuid4(), uuid.uuid4())

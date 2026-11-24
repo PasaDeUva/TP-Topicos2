@@ -177,7 +177,21 @@ def verify(rollback_files=None):
                 "tipo": "general",
                 "precio": "1500.00",
                 "cupo": 100,
-            }
+            },
+            {
+                "nombre": "Platea Numerada",
+                "tipo": "numerado",
+                "sectores": [
+                    {
+                        "nombre": "Sector A",
+                        "precio": "3000.00",
+                        "asientos": [
+                            {"fila": "1", "numero": 1},
+                            {"fila": "1", "numero": 2},
+                        ],
+                    }
+                ],
+            },
         ],
     }
     org_token = organizer_tokens["access_token"]
@@ -223,6 +237,43 @@ def verify(rollback_files=None):
         expected=201,
     )
     assert purchase["cliente_id"] == customer
+    assert purchase["estado"] == "confirmada"
+    assert "reserva_id" in purchase
+    assert purchase["asiento_id"] is None
+
+    # Test de integración: Compra en modalidad numerada con asiento
+    modalidad_num = next(m for m in event["modalidades"] if m["tipo"] == "numerado")
+    asiento_target = modalidad_num["sectores"][0]["asientos"][0]["id"]
+    purchase_num = request(
+        purchases,
+        "POST",
+        "/compras",
+        {
+            "evento_id": event["id"],
+            "modalidad_id": modalidad_num["id"],
+            "asiento_id": asiento_target,
+        },
+        token=customer_tokens["access_token"],
+        headers={"Idempotency-Key": "integration-num-key"},
+        expected=201,
+    )
+    assert purchase_num["asiento_id"] == asiento_target
+    assert purchase_num["estado"] == "confirmada"
+
+    # Conflicto al intentar comprar el mismo asiento nuevamente (409)
+    request(
+        purchases,
+        "POST",
+        "/compras",
+        {
+            "evento_id": event["id"],
+            "modalidad_id": modalidad_num["id"],
+            "asiento_id": asiento_target,
+        },
+        token=customer_tokens["access_token"],
+        headers={"Idempotency-Key": "integration-num-key-2"},
+        expected=409,
+    )
     for service, correlation, method, path, status in (
         ("events-service", event_correlation, "POST", "/eventos", 201),
         ("events-service", purchase_correlation, "GET", f"/eventos/{event['id']}", 200),
@@ -264,12 +315,14 @@ def verify(rollback_files=None):
         headers=key,
         expected=409,
     )
-    assert (
-        request(purchases, "GET", "/compras", token=customer_tokens["access_token"])[0][
-            "id"
-        ]
-        == purchase["id"]
-    )
+    compras_ids = [
+        c["id"]
+        for c in request(
+            purchases, "GET", "/compras", token=customer_tokens["access_token"]
+        )
+    ]
+    assert purchase["id"] in compras_ids
+    assert purchase_num["id"] in compras_ids
     request(
         purchases,
         "GET",

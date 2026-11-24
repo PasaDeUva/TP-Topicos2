@@ -94,6 +94,12 @@ async def eventos_simulados() -> AsyncGenerator[dict, None]:
         "llamadas": 0,
         "modo": "normal",
         "correlation_ids": [],
+        "reservas": {},
+        "reservas_creadas": [],
+        "reservas_confirmadas": [],
+        "reservas_liberadas": [],
+        "modo_reserva": "normal",
+        "modo_confirmar": "normal",
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -103,7 +109,37 @@ async def eventos_simulados() -> AsyncGenerator[dict, None]:
             raise httpx.ConnectError("events-service caído")
         if state["modo"] == "5xx":
             return httpx.Response(500)
-        evento_id = request.url.path.rsplit("/", 1)[-1]
+
+        path = request.url.path
+        # Confirmar reserva: POST .../reservas/{rid}/confirmar
+        if path.endswith("/confirmar") and request.method == "POST":
+            if state["modo_confirmar"] == "5xx":
+                return httpx.Response(500)
+            if state["modo_confirmar"] == "409":
+                return httpx.Response(409, json={"detail": "reserva expirada"})
+            parts = path.split("/")
+            rid = parts[-2]
+            state["reservas_confirmadas"].append(rid)
+            return httpx.Response(200, json={"status": "confirmada"})
+
+        # Liberar reserva: DELETE /eventos/{eid}/modalidades/{mid}/reservas/{rid}
+        if "/reservas/" in path and request.method == "DELETE":
+            rid = path.rsplit("/", 1)[-1]
+            state["reservas_liberadas"].append(rid)
+            return httpx.Response(200, json={"status": "liberada"})
+
+        # Crear reserva: POST /eventos/{eid}/modalidades/{mid}/reservas
+        if path.endswith("/reservas") and request.method == "POST":
+            if state["modo_reserva"] == "5xx":
+                return httpx.Response(500)
+            if state["modo_reserva"] == "409":
+                return httpx.Response(409, json={"detail": "sin disponibilidad"})
+            rid = str(uuid.uuid4())
+            state["reservas_creadas"].append(rid)
+            return httpx.Response(201, json={"reserva_id": rid})
+
+        # Consulta de evento: GET /eventos/{eid}
+        evento_id = path.rsplit("/", 1)[-1]
         evento = state["eventos"].get(evento_id)
         if evento is None:
             return httpx.Response(404, json={"detail": "not found"})

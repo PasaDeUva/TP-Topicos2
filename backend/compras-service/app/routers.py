@@ -6,7 +6,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.events_client import EventsClient, EventsServiceError, get_events_client
+from app.events_client import (
+    EventsClient,
+    EventsConflictError,
+    EventsServiceError,
+    get_events_client,
+)
 from app.identity import current_customer
 from app.models import Compra
 from app.schemas import CompraIn, CompraOut
@@ -32,6 +37,7 @@ def _responder_existente(
     if (
         existente.evento_id != payload.evento_id
         or existente.modalidad_id != payload.modalidad_id
+        or existente.asiento_id != payload.asiento_id
     ):
         raise HTTPException(status_code=409, detail="idempotency conflict")
     response.status_code = 200
@@ -100,13 +106,56 @@ async def crear_compra(
         raise HTTPException(status_code=404, detail="not found")
     if not evento["activo"]:
         raise HTTPException(status_code=409, detail="evento inactivo")
-    if modalidad["tipo"] != "general":
-        raise HTTPException(status_code=409, detail="modalidad no disponible")
 
+    # Validar coherencia entre tipo de modalidad y asiento_id
+    if modalidad["tipo"] == "numerado" and payload.asiento_id is None:
+        raise HTTPException(status_code=400, detail="invalid body")
+    if modalidad["tipo"] == "general" and payload.asiento_id is not None:
+        raise HTTPException(status_code=400, detail="invalid body")
+
+    # 1. Reservar entrada/asiento en events-service
+    try:
+        reserva_id = await events_client.reservar_entrada(
+            evento_id=payload.evento_id,
+            modalidad_id=payload.modalidad_id,
+            asiento_id=payload.asiento_id,
+            idempotency_key=f"compra-{customer}-{idempotency_key}",
+            correlation_id=request.state.correlation_id,
+        )
+    except EventsConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except EventsServiceError:
+        raise HTTPException(status_code=503, detail="events service unavailable")
+
+    # 2. Confirmar reserva en events-service
+    try:
+        await events_client.confirmar_reserva(
+            evento_id=payload.evento_id,
+            modalidad_id=payload.modalidad_id,
+            reserva_id=reserva_id,
+            correlation_id=request.state.correlation_id,
+        )
+    except (EventsConflictError, EventsServiceError):
+        # Compensación automática si falla la confirmación
+        try:
+            await events_client.liberar_reserva(
+                evento_id=payload.evento_id,
+                modalidad_id=payload.modalidad_id,
+                reserva_id=reserva_id,
+                correlation_id=request.state.correlation_id,
+            )
+        except Exception:
+            pass  # Si la compensación falla, el TTL expirará la reserva
+        raise HTTPException(status_code=503, detail="events service unavailable")
+
+    # 3. Persistir compra confirmada
     compra = Compra(
         cliente_id=customer,
         evento_id=payload.evento_id,
         modalidad_id=payload.modalidad_id,
+        reserva_id=reserva_id,
+        asiento_id=payload.asiento_id,
+        estado="confirmada",
         idempotency_key=idempotency_key,
     )
     session.add(compra)

@@ -10,12 +10,20 @@ from tests.conftest import TEST_CUSTOMER_ID, evento_fake
 CLIENTE_ID = str(TEST_CUSTOMER_ID)
 
 
-def compra_payload(evento_id: str, modalidad_id: str, cliente_id: str = CLIENTE_ID):
-    return {
+def compra_payload(
+    evento_id: str,
+    modalidad_id: str,
+    cliente_id: str = CLIENTE_ID,
+    asiento_id: str | None = None,
+):
+    data = {
         "cliente_id": cliente_id,
         "evento_id": evento_id,
         "modalidad_id": modalidad_id,
     }
+    if asiento_id is not None:
+        data["asiento_id"] = asiento_id
+    return data
 
 
 async def registrar(client, body: dict, key: str = "clave-1", correlation=None):
@@ -36,8 +44,13 @@ async def test_registro_exitoso_devuelve_201(client, eventos_simulados):
     datos = response.json()
     assert datos["evento_id"] == evento_id
     assert datos["modalidad_id"] == modalidad_id
+    assert datos["asiento_id"] is None
+    assert datos["estado"] == "confirmada"
+    assert "reserva_id" in datos
     assert "idempotency_key" not in datos
     assert "creado_en" in datos
+    assert len(eventos_simulados["reservas_creadas"]) == 1
+    assert len(eventos_simulados["reservas_confirmadas"]) == 1
 
 
 async def test_evento_inexistente_devuelve_404(client, eventos_simulados):
@@ -64,15 +77,76 @@ async def test_evento_inactivo_devuelve_409(client, eventos_simulados):
     assert response.json() == {"detail": "evento inactivo"}
 
 
-async def test_modalidad_numerada_devuelve_409(client, eventos_simulados):
+async def test_modalidad_numerada_exitosa_con_asiento(client, eventos_simulados):
+    asiento_id = str(uuid.uuid4())
+    modalidad = {"id": str(uuid.uuid4()), "nombre": "Platea", "tipo": "numerado"}
+    evento_id, evento = evento_fake(modalidades=[modalidad])
+    eventos_simulados["eventos"][evento_id] = evento
+
+    response = await registrar(
+        client, compra_payload(evento_id, modalidad["id"], asiento_id=asiento_id)
+    )
+
+    assert response.status_code == 201
+    datos = response.json()
+    assert datos["modalidad_id"] == modalidad["id"]
+    assert datos["asiento_id"] == asiento_id
+    assert datos["estado"] == "confirmada"
+    assert "reserva_id" in datos
+
+
+async def test_modalidad_numerada_sin_asiento_devuelve_400(client, eventos_simulados):
     modalidad = {"id": str(uuid.uuid4()), "nombre": "Platea", "tipo": "numerado"}
     evento_id, evento = evento_fake(modalidades=[modalidad])
     eventos_simulados["eventos"][evento_id] = evento
 
     response = await registrar(client, compra_payload(evento_id, modalidad["id"]))
 
+    assert response.status_code == 400
+    assert response.json() == {"detail": "invalid body"}
+
+
+async def test_modalidad_general_con_asiento_devuelve_400(client, eventos_simulados):
+    evento_id, evento = evento_fake()
+    eventos_simulados["eventos"][evento_id] = evento
+    modalidad_id = evento["modalidades"][0]["id"]
+
+    response = await registrar(
+        client,
+        compra_payload(evento_id, modalidad_id, asiento_id=str(uuid.uuid4())),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "invalid body"}
+
+
+async def test_reserva_sin_disponibilidad_devuelve_409(client, eventos_simulados):
+    evento_id, evento = evento_fake()
+    eventos_simulados["eventos"][evento_id] = evento
+    eventos_simulados["modo_reserva"] = "409"
+
+    response = await registrar(
+        client, compra_payload(evento_id, evento["modalidades"][0]["id"])
+    )
+
     assert response.status_code == 409
-    assert response.json() == {"detail": "modalidad no disponible"}
+    assert response.json() == {"detail": "sin disponibilidad"}
+
+
+async def test_falla_en_confirmar_ejecuta_compensacion_liberando_reserva(
+    client, eventos_simulados
+):
+    evento_id, evento = evento_fake()
+    eventos_simulados["eventos"][evento_id] = evento
+    eventos_simulados["modo_confirmar"] = "5xx"
+
+    response = await registrar(
+        client, compra_payload(evento_id, evento["modalidades"][0]["id"])
+    )
+
+    assert response.status_code == 503
+    assert len(eventos_simulados["reservas_creadas"]) == 1
+    assert len(eventos_simulados["reservas_liberadas"]) == 1
 
 
 async def test_eventos_caido_devuelve_503_y_no_registra(
@@ -222,7 +296,8 @@ async def test_correlation_id_se_propaga_a_eventos(client, eventos_simulados):
     )
 
     assert response.headers["X-Correlation-Id"] == correlation
-    assert eventos_simulados["correlation_ids"] == [correlation]
+    assert len(eventos_simulados["correlation_ids"]) >= 1
+    assert all(c == correlation for c in eventos_simulados["correlation_ids"])
 
 
 async def test_correlation_id_generado_se_propaga_a_eventos_si_no_se_envia_header(
@@ -239,4 +314,5 @@ async def test_correlation_id_generado_se_propaga_a_eventos_si_no_se_envia_heade
     assert response.status_code == 201
     correlation_generado = response.headers["X-Correlation-Id"]
     assert correlation_generado is not None
-    assert eventos_simulados["correlation_ids"] == [correlation_generado]
+    assert len(eventos_simulados["correlation_ids"]) >= 1
+    assert all(c == correlation_generado for c in eventos_simulados["correlation_ids"])
