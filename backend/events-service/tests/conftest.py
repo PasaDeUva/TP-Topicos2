@@ -78,6 +78,26 @@ async def client(session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides.clear()
 
 
+@pytest_asyncio.fixture()
+async def session_factory(engine):
+    return async_sessionmaker(engine, expire_on_commit=False)
+
+
+@pytest_asyncio.fixture()
+async def concurrent_client(session_factory) -> AsyncGenerator[AsyncClient, None]:
+    async def _get_concurrent_session():
+        async with session_factory() as s:
+            yield s
+
+    app.dependency_overrides[get_session] = _get_concurrent_session
+    app.dependency_overrides[current_organizer] = lambda: TEST_OWNER_ID
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
 # ---------------------------------------------------------------------------
 # Payload factory helpers
 # ---------------------------------------------------------------------------
