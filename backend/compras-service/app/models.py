@@ -26,6 +26,15 @@ class Compra(Base):
     cliente_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     evento_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     modalidad_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    reserva_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True
+    )
+    asiento_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    estado: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="confirmada", server_default="confirmada"
+    )
     idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
     creado_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
