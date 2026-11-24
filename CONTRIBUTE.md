@@ -159,6 +159,14 @@ python backend/compras-service/scripts/verify_compose.py
 npm --prefix frontend/web-app test:e2e
 ```
 
+### E. Suite de Integración E2E Multiservicio (Backend)
+
+Ejecuta los escenarios de orquestación real entre `identity-service`, `events-service` y `compras-service` (compra exitosa con reserva, compras fallidas por validación/inventario, ciclo de vida de sesiones, resiliencia y compatibilidad de rollback):
+
+```bash
+python backend/suite-e2e-backend/run_e2e.py
+```
+
 ---
 
 ## 5. Integración Continua (CI Pipeline)
@@ -174,7 +182,7 @@ El pipeline valida secuencialmente:
 6. **Tests de Backend:** Ejecuta `pytest` sobre `identity-service`, `events-service` y `compras-service`.
 7. **Linter de Backend:** Ejecuta `ruff check`.
 8. **Frontend Checks:** Ejecuta `npm test`, `npm run lint` y `npm run typecheck` en `web-app`.
-9. **E2E Integration Test:** Ejecuta la prueba de integración end-to-end con Identity real y microservicios.
+9. **E2E Integration Test:** Ejecuta las verificaciones de compose aisladas de cada microservicio (`verify_compose.py`) y la suite de integración end-to-end multiservicio (`run_e2e.py`).
 
 > ⚠️ Si cualquiera de estos pasos falla, el Pull Request quedará bloqueado y no podrá integrarse hasta corregir las observaciones.
 

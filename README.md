@@ -128,7 +128,7 @@ Toda la información sobre el flujo de trabajo de desarrollo se encuentra centra
 - **Estrategia de ramas (Git Flow):** Uso de ramas `feature/*`, `bugfix/*`, `release/*` y `hotfix/*`, reglas de protección y Pull Requests.
 - **Desarrollo Spec-Driven (OpenSpec):** Cómo documentar, proponer y sincronizar especificaciones (`/opsx-*`).
 - **Convención de commits:** Reglas de [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) y activación de los hooks de pre-commit (`git config core.hooksPath .githooks`).
-- **Validación y Tests locales:** Comandos para ejecutar las suites de pruebas de backend (`backend-tests`), linters (`Ruff`, `ESLint`), scripts `verify_compose.py` y pruebas E2E con Playwright.
+- **Validación y Tests locales:** Comandos para ejecutar las suites de pruebas de backend (`backend-tests`), linters (`Ruff`, `ESLint`), scripts `verify_compose.py`, suite E2E de backend (`suite-e2e-backend`) y pruebas E2E con Playwright.
 - **Pipeline de CI:** Explicación de los checks obligatorios ejecutados en GitHub Actions antes de cada merge.
 
 Consultá **[CONTRIBUTE.md](CONTRIBUTE.md)** antes de realizar y enviar cambios al repositorio.
