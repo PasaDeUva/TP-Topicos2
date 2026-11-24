@@ -6,7 +6,7 @@ Define el comportamiento observable para la gestión mínima del catálogo de ev
 ## Requirements
 
 ### Requirement: Alta de evento
-El sistema SHALL permitir crear un evento con sus modalidades mediante `POST /eventos`. El campo `nombre` es obligatorio. El campo `owner_id` viaja en el body; la autenticación del organizador se delega a un change futuro. Los UUIDs del evento y sus modalidades SHALL ser autogenerados por el sistema.
+El sistema SHALL permitir crear un evento con sus modalidades mediante `POST /eventos`. El campo `nombre` es obligatorio y el `owner_id` viaja en el body. Los UUIDs del evento y modalidades SHALL ser autogenerados. Las modalidades `general` SHALL exigir `precio` y `cupo`. Las modalidades `numerado` SHALL exigir sectores con nombre, precio y asientos (`fila`, `numero`).
 
 #### Scenario: Creación exitosa de evento
 - **WHEN** se envía `POST /eventos` con `nombre`, `venue`, `fecha` y al menos una modalidad con `tipo` ∈ {`numerado`, `general`}
@@ -20,8 +20,20 @@ El sistema SHALL permitir crear un evento con sus modalidades mediante `POST /ev
 - **WHEN** se envía `POST /eventos` con una modalidad cuyo `tipo` no es `numerado` ni `general`
 - **THEN** el sistema responde con código 400 Bad Request y cuerpo `{"detail": "invalid body"}`
 
+#### Scenario: Creación rechazada por `precio` faltante en modalidad general
+- **WHEN** se envía `POST /eventos` con una modalidad de tipo `general` sin `precio`
+- **THEN** el sistema responde con código 400 Bad Request y cuerpo `{"detail": "invalid body"}`
+
+#### Scenario: Creación rechazada por `cupo` faltante en modalidad general
+- **WHEN** se envía `POST /eventos` con una modalidad de tipo `general` sin `cupo`
+- **THEN** el sistema responde con código 400 Bad Request y cuerpo `{"detail": "invalid body"}`
+
+#### Scenario: Creación exitosa de modalidad numerada con sectores y asientos
+- **WHEN** se envía `POST /eventos` con una modalidad de tipo `numerado` con lista de sectores con precio y asientos
+- **THEN** el sistema persiste los sectores con su precio y los asientos con estado `libre`, y los incluye en la respuesta 201 Created
+
 ### Requirement: Consulta de eventos y detalle
-El sistema SHALL exponer la consulta del catálogo de eventos y detalle por identificador retornando cada evento tanto si su atributo `activo` es verdadero como si es falso.
+El sistema SHALL exponer la consulta del catálogo de eventos y detalle por identificador retornando cada evento tanto si su atributo `activo` es verdadero como si es falso. La respuesta SHALL incluir `precio` y `cupo` de cada modalidad general. Las modalidades de tipo `numerado` SHALL incluir la lista de sectores con su precio, sus asientos y su estado actual.
 
 #### Scenario: Listado de eventos
 - **WHEN** se solicita `GET /eventos`
@@ -30,26 +42,36 @@ El sistema SHALL exponer la consulta del catálogo de eventos y detalle por iden
 #### Scenario: Detalle de evento existente
 - **GIVEN** un evento registrado con un UUID determinado
 - **WHEN** se solicita `GET /eventos/{id}`
-- **THEN** el sistema responde con código 200 OK con la entidad completa incluyendo sus modalidades
+- **THEN** el sistema responde con código 200 OK con la entidad completa incluyendo sus modalidades con `precio` y `cupo` (en general) o sectores con precio y asientos (en numerado)
 
 #### Scenario: Consulta de evento inexistente
 - **WHEN** se solicita `GET /eventos/{id}` con un UUID que no existe en el sistema
 - **THEN** el sistema responde con código 404 Not Found
 
 ### Requirement: Edición completa de evento
-El sistema SHALL permitir reemplazar completamente un evento y todas sus modalidades mediante `PUT /eventos/{id}`. Las modalidades omitidas en el body son eliminadas (semántica de reemplazo total).
+El sistema SHALL permitir editar un evento y sus modalidades mediante `PUT /eventos/{id}`. Las modalidades pueden incluir opcionalmente su `id: UUID` para actualizar modalidades existentes preservando sus entidades hijas; las modalidades sin `id` se crean como nuevas. Las modalidades omitidas en el body son eliminadas únicamente si no poseen registros en el historial de reservas (`activa`, `confirmada` o `liberada`); en caso contrario el sistema MUST rechazar con 409 Conflict.
 
 #### Scenario: Edición exitosa
-- **GIVEN** un evento registrado con un UUID determinado
-- **WHEN** se envía `PUT /eventos/{id}` con datos válidos y un conjunto de modalidades
-- **THEN** el sistema reemplaza los campos del evento y elimina las modalidades anteriores sustituyéndolas por las nuevas, respondiendo con código 200 OK
+- **GIVEN** un evento registrado con un UUID determinado sin reservas asociadas en sus modalidades a eliminar
+- **WHEN** se envía `PUT /eventos/{id}` con datos válidos y un conjunto de modalidades con precio y cupo
+- **THEN** el sistema reemplaza los campos del evento, actualiza las modalidades identificadas por `id` o crea las nuevas, y elimina las modalidades omitidas que no tengan historial, respondiendo con código 200 OK
+
+#### Scenario: Edición exitosa preservando modalidad existente mediante id
+- **GIVEN** un evento existente con una modalidad numerada o general con un `id` conocido
+- **WHEN** se envía `PUT /eventos/{id}` enviando dicho `id` en la modalidad con nuevos datos de nombre o precio
+- **THEN** el sistema actualiza la modalidad conservando su UUID original y las relaciones con sus entidades hijas
+
+#### Scenario: Edición rechazada por modalidades con reservas o ventas asociadas
+- **GIVEN** un evento existente con una modalidad que posee al menos una reserva en cualquier estado (`activa`, `confirmada` o `liberada`)
+- **WHEN** se envía `PUT /eventos/{id}` omitiendo dicha modalidad del payload
+- **THEN** el sistema responde con código 409 Conflict y preserva el evento y sus modalidades sin cambios
 
 #### Scenario: Edición de evento inexistente
 - **WHEN** se envía `PUT /eventos/{id}` con un UUID que no existe en el sistema
 - **THEN** el sistema responde con código 404 Not Found
 
 #### Scenario: Edición rechazada por datos inválidos
-- **WHEN** se envía `PUT /eventos/{id}` omitiendo `nombre` o con modalidades cuyo `tipo` no pertenece al enum
+- **WHEN** se envía `PUT /eventos/{id}` omitiendo `nombre`, `precio` en general o con modalidades cuyo `tipo` no pertenece al enum
 - **THEN** el sistema responde con código 400 Bad Request y cuerpo `{"detail": "invalid body"}`
 
 ### Requirement: Baja lógica de evento
