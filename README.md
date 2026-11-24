@@ -1,272 +1,172 @@
 # TP-Topicos2
 
-Plataforma web de venta y gestión de entradas para eventos. El proyecto se desarrolla con un enfoque **spec-driven**: primero se documenta el comportamiento esperado y después se implementa.
+Plataforma web de venta y gestión de entradas para eventos basada en una arquitectura de microservicios. El proyecto se desarrolla con un enfoque **spec-driven**: primero se documenta el comportamiento esperado y después se implementa.
+
+---
 
 ## Tecnologías
 
-- **Backend:** FastAPI y SQLAlchemy.
-- **Base de datos:** PostgreSQL.
-- **Frontend:** React, Vite y TypeScript.
-- **Infraestructura:** Docker.
+- **Backend:** Python 3.12, FastAPI 0.115, SQLAlchemy 2.0 (asyncio / psycopg v3), Alembic 1.14, Pydantic v2.
+- **Bases de datos:** PostgreSQL 16 (instancias y bases de datos aisladas por servicio).
+- **Frontend:** React 19, TypeScript, Vite, Tailwind CSS.
+- **Seguridad & Autenticación:** Claves asimétricas RSA (JWT RS256), cookies de sesión HttpOnly con protección CSRF (SameSite Strict), rotación de tokens y lista de revocación centralizada en Identity.
+- **Infraestructura:** Docker & Docker Compose.
 - **Especificaciones:** OpenSpec en Markdown.
+- **Testing & Calidad:** Pytest, Playwright, Vitest, Ruff, ESLint, TypeScript Typecheck.
 
-## Estructura
+---
+
+## Arquitectura y Servicios
+
+El repositorio está estructurado como un monorepo que contiene tanto las aplicaciones frontend como los microservicios backend:
 
 ```text
-frontend/    # aplicaciones frontend, una carpeta por proyecto
-└── mock-app/ # aplicación React independiente de ejemplo
-backend/     # microservicios backend, una carpeta por servicio
-└── mock-service/ # servicio FastAPI independiente de ejemplo
-└── identity-service/ # cuentas, roles y sesiones
+TP-Topicos2/
+├── backend/
+│   ├── identity-service/   # Cuentas, roles, autenticación JWT/cookies y revocación de sesiones
+│   ├── events-service/     # Catálogo de eventos, modalidades (general y numerada), inventario y reservas
+│   ├── compras-service/    # Registro y consulta de compras con idempotencia e integración con Identity y Events
+│   └── mock-service/       # Servicio FastAPI de ejemplo / scaffold inicial
+├── frontend/
+│   ├── web-app/            # Aplicación web principal (autenticación, registro, panel de administración de organizadores)
+│   └── mock-app/           # Aplicación React de ejemplo conectada a mock-service
+├── docs/                   # Documentación técnica, consigna, glosario y ADRs (Architecture Decision Records)
+└── openspec/               # Especificaciones OpenSpec (specs vigentes, cambios y archivo)
 ```
 
-## Entorno local con Docker
+### Mapa de Microservicios y Puertos en Desarrollo
 
-El entorno local se ejecuta con Docker Compose y no requiere instalar
-dependencias de frontend o backend en el host. Los comandos de Docker son los
-mismos en Windows, macOS y Linux.
+| Servicio / Contenedor | Puerto Host | Descripción | Base de datos |
+|---|---|---|---|
+| `identity-service` | `8002` | Autenticación, registro, gestión de roles y sesiones web | `identity_db` (puerto `5435`) |
+| `events-service` | `8001` | Gestión de catálogo de eventos, modalidades, sectores, asientos y reservas | `events_db` (puerto `5433`) |
+| `compras-service` | `8003` | Registro y consulta de compras de entradas con validación e idempotencia | `compras_db` (puerto `5436`) |
+| `mock-service` | `8000` | Microservicio mock de ejemplo | `topicos` (puerto `5432`) |
+| `web-app` | `5174` | Aplicación web (React + Vite) con proxy integrado para `/auth` y `/admin` | N/A |
+| `mock-app` | `5173` | Frontend de ejemplo conectado a `mock-service` | N/A |
 
-Requisitos:
+> **Nota:** Todos los puertos del host son parametrizables a través de variables de entorno (ver `.env.example`).
+
+---
+
+## Entorno Local con Docker
+
+El entorno local se ejecuta con Docker Compose y no requiere instalar dependencias de frontend o backend en la máquina host. Los comandos son idénticos en Windows, macOS y Linux.
+
+### Requisitos Previos
 
 - **Windows y macOS:** [Docker Desktop](https://www.docker.com/products/docker-desktop/).
 - **Linux:** [Docker Engine](https://docs.docker.com/engine/install/) con el plugin Docker Compose.
+
+### Configuración de Variables de Entorno
+
+Copiar el archivo de plantilla `.env.example` a `.env`:
+
+```bash
+cp .env.example .env
+```
+
+*(En Windows PowerShell: `Copy-Item .env.example .env`)*
+
+El archivo `.env` ya contiene valores por defecto listos para desarrollo local, incluyendo las credenciales iniciales de administrador (`admin@example.com` / `local-admin-password`), secretos CSRF y tokens de comunicación entre microservicios.
+
+### Iniciar todos los servicios
 
 ```bash
 docker compose up --build
 ```
 
-Servicios disponibles:
-
-- Frontend: <http://localhost:5173>
-- Backend mock service: <http://localhost:8000/health>
-- PostgreSQL: `localhost:5432`
-- Identity API: <http://localhost:8002/docs>
-- PostgreSQL de Identity para desarrollo: `localhost:5435` (`identity_db`)
-
-Para levantar o reconstruir solo Identity y su base:
+O en segundo plano:
 
 ```bash
+docker compose up -d --build
+```
+
+### URLs y Documentación Interactiva
+
+- **Aplicación Web:** <http://localhost:5174>
+- **Identity API (Swagger UI):** <http://localhost:8002/docs>
+- **Events API (Swagger UI):** <http://localhost:8001/docs>
+- **Compras API (Swagger UI):** <http://localhost:8003/docs>
+- **Mock App:** <http://localhost:5173>
+- **Mock Service:** <http://localhost:8000/health>
+
+### Iniciar servicios individuales
+
+Para levantar un microservicio específico junto con su base de datos dependiente:
+
+```bash
+# Iniciar Identity Service
 docker compose up -d --build --wait identity-service
+
+# Iniciar Events Service
+docker compose up -d --build --wait events-service
+
+# Iniciar Compras Service
+docker compose up -d --build --wait compras-service
+
+# Iniciar Web App
+docker compose up -d --build --wait web-app
 ```
 
-Identity aplica sus migraciones al arrancar. Los datos y las claves locales se
-conservan en volúmenes de Docker. La interfaz web de ejemplo todavía no está
-integrada con Identity.
+Cada servicio ejecuta automáticamente sus migraciones de base de datos pendientes (`alembic upgrade head`) al arrancar el contenedor.
 
-Para validar los servicios:
+### Detener el entorno
 
-```bash
-docker compose run --rm mock-service pytest
-docker compose run --rm backend-tests
-docker compose run --rm mock-app npm run typecheck
-docker compose run --rm mock-app npm run test
-docker compose run --rm mock-app npm run build
-```
-
-El frontend consulta `/api/health`; Vite redirige esa ruta al servicio
-`mock-service` dentro de la red de Compose.
-
-`backend-tests` es el runner de toda la carpeta `backend/`: inicia las instancias
-de Identity y Events, prepara la base de prueba de Identity y ejecuta los tests de
-los microservicios que tengan una carpeta `tests/`. Identity aplica sus
-migraciones al iniciar sus tests.
-Consultar la documentación específica en [`backend/README.md`](backend/README.md)
-y [`backend/identity-service/README.md`](backend/identity-service/README.md).
-
-Para detener el entorno conservando los datos y las claves:
+Para detener los contenedores conservando las bases de datos y las claves criptográficas:
 
 ```bash
 docker compose down
 ```
 
-## Documentación
+Para detener y eliminar volúmenes asociados:
+
+```bash
+docker compose down -v
+```
+
+---
+
+## Contribución y Desarrollo
+
+Toda la información sobre el flujo de trabajo de desarrollo se encuentra centralizada en **[CONTRIBUTE.md](CONTRIBUTE.md)**:
+
+- **Estrategia de ramas (Git Flow):** Uso de ramas `feature/*`, `bugfix/*`, `release/*` y `hotfix/*`, reglas de protección y Pull Requests.
+- **Desarrollo Spec-Driven (OpenSpec):** Cómo documentar, proponer y sincronizar especificaciones (`/opsx-*`).
+- **Convención de commits:** Reglas de [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) y activación de los hooks de pre-commit (`git config core.hooksPath .githooks`).
+- **Validación y Tests locales:** Comandos para ejecutar las suites de pruebas de backend (`backend-tests`), linters (`Ruff`, `ESLint`), scripts `verify_compose.py` y pruebas E2E con Playwright.
+- **Pipeline de CI:** Explicación de los checks obligatorios ejecutados en GitHub Actions antes de cada merge.
+
+Consultá **[CONTRIBUTE.md](CONTRIBUTE.md)** antes de realizar y enviar cambios al repositorio.
+
+---
+
+## Agentes de IA Soportados
+
+El repositorio cuenta con configuraciones y sincronización automática de skills y workflows para:
+
+- **Antigravity:** `.agents/skills/` y `.agents/workflows/`
+- **OpenCode:** `.opencode/skills/` y `.opencode/commands/`
+- **GitHub Copilot en VS Code:** `.github/skills/` y `.github/prompts/`
+
+---
+
+## Documentación Técnica
 
 - [Consigna del trabajo práctico](docs/assignment/Trabajo-final-de-Tpicos-II---2026.pdf)
+- [Guía de Contribución](CONTRIBUTE.md)
 - [Cómo trabajar con OpenSpec](docs/openspec.md)
 - [Desarrollo local y configuración del IDE](docs/local-development.md)
-- [Decisiones arquitectónicas](docs/adr/README.md)
-- [Hooks y CI/CD](docs/ci-cd.md)
+- [Glosario de términos de la plataforma](docs/glosario.md)
+- [Decisiones arquitectónicas (ADRs)](docs/adr/README.md)
+- [Estrategia de CI/CD y Hooks](docs/ci-cd.md)
+- [Documentación de Backend](backend/README.md)
+  - [Identity Service](backend/identity-service/README.md)
+  - [Events Service](backend/events-service/README.md)
+  - [Compras Service](backend/compras-service/README.md)
+- [Documentación de Web App](frontend/web-app/README.md)
 
-## Lint
-
-Las dependencias locales se mantienen aisladas por servicio: Python en el
-`.venv` de cada backend y Node en `node_modules` de cada aplicación. No instales
-dependencias en la raíz del repositorio ni en el Python global.
-
-**Backend, PowerShell:**
-
-```powershell
-cd backend\mock-service
-.\.venv\Scripts\python.exe -m ruff check .
-```
-
-**Backend, macOS o Linux:**
-
-```bash
-cd backend/mock-service
-.venv/bin/python -m ruff check .
-```
-
-**Frontend:**
-
-```bash
-cd frontend/mock-app
-npm run lint
-```
-
-**Docker Compose, desde la raíz del repositorio:**
-
-```bash
-docker compose run --rm --no-deps backend-tests python -m ruff check mock-service identity-service
-docker compose run --rm mock-app npm run lint
-```
-
-## Agentes soportados
-
-El repositorio incluye workflows para:
-
-- **OpenCode:** `.opencode/skills/` y `.opencode/commands/`.
-- **Antigravity:** `.agents/skills/` y `.agents/workflows/`.
-- **GitHub Copilot en VS Code:** `.github/skills/` y `.github/prompts/`.
-
-Cada integrante puede usar el agente que prefiera. Las skills oficiales de OpenSpec se mantienen en la ruta específica de cada herramienta.
-
-## OpenSpec
-
-OpenSpec organiza el trabajo en:
-
-```text
-openspec/
-├── config.yaml
-├── specs/                 # comportamiento vigente
-└── changes/               # cambios en desarrollo
-    └── archive/           # cambios terminados
-```
-
-Para instalar el CLI:
-
-**Windows (PowerShell):**
-
-```powershell
-irm https://openspec.dev/cli/install.ps1 | iex
-```
-
-**macOS y Linux:**
-
-```bash
-curl -fsSL https://openspec.dev/cli/install.sh | bash
-```
-
-**Alternativamente, con npm (todos los sistemas):**
-
-```bash
-npm install -g @fission-ai/openspec@latest
-```
-
-Para inicializar o actualizar el proyecto (igual en todos los sistemas):
-
-```bash
-openspec init --tools "opencode,antigravity,github-copilot"
-```
-
-Para más detalle, ver [Cómo trabajar con OpenSpec](docs/openspec.md).
-
-## Workflow de trabajo
-
-1. **Explorar** una idea o problema:
-
-   ```text
-   /opsx-explore
-   ```
-
-2. **Proponer** un cambio:
-
-   ```text
-   /opsx-propose
-   ```
-
-   La propuesta crea `proposal.md`, `specs/`, `design.md` y `tasks.md` dentro de `openspec/changes/`.
-
-3. **Aplicar** las tareas aprobadas:
-
-   ```text
-   /opsx-apply
-   ```
-
-4. **Sincronizar** las especificaciones vigentes:
-
-   ```text
-   /opsx-sync
-   ```
-
-5. **Archivar** el cambio terminado:
-
-   ```text
-   /opsx-archive
-   ```
-
-Los nombres pueden aparecer como skills, prompts o workflows según el agente. También se pueden invocar directamente por nombre, por ejemplo `openspec-apply-change`.
-
-## Git Flow y commits
-
-Usamos Git Flow para las ramas:
-
-```text
-feature/<nombre>
-bugfix/<nombre>
-release/<version>
-hotfix/<nombre>
-```
-
-Las ramas `feature/*` y `bugfix/*` generan PRs a `development`; `release/*` y
-`hotfix/*`, a `master`.
-
-### Protección de ramas en GitHub
-
-Crear un ruleset activo que aplique a `development` y `master`:
-
-- Exigir que los cambios entren mediante un pull request.
-- Exigir el check de estado `CI / checks` antes de integrar. Confirmar el nombre
-  exacto en la primera ejecución del workflow `CI`.
-- No agregar bypasses al ruleset, para que tampoco se permitan pushes directos
-  de administradores.
-
-El workflow no puede configurar estas reglas por sí mismo; alguien con permisos
-de administración debe aplicarlas en **Settings → Rules → Rulesets**.
-
-Los commits siguen [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/):
-
-```text
-<type>[optional scope][optional !]: <description>
-
-[optional body]
-
-[optional footer(s)]
-```
-
-`feat` se usa para nuevas funcionalidades y `fix` para correcciones. También se permiten otros tipos como `build`, `chore`, `ci`, `docs`, `perf`, `refactor`, `revert`, `style` y `test`.
-
-Ejemplos:
-
-```text
-feat(identity): agregar registro de organizadores
-fix(events): corregir publicación de eventos
-docs: actualizar instrucciones de instalación
-feat(api)!: cambiar el contrato de autenticación
-```
-
-Los cambios incompatibles deben marcarse con `!` antes de los dos puntos o con el footer `BREAKING CHANGE: descripción`.
-
-### Hooks de pre-commit
-
-Configurar los hooks compartidos una vez por clon:
-
-```bash
-git config core.hooksPath .githooks
-```
-
-Para conocer las validaciones de los hooks y el flujo de CI/CD, consultá la
-[guía de hooks y CI/CD](docs/ci-cd.md).
+---
 
 ## Autores
 
