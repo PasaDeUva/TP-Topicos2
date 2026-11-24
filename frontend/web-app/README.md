@@ -49,7 +49,7 @@ npm --prefix frontend/web-app run build
 npm --prefix frontend/web-app exec -- playwright install chromium
 docker compose build backend-tests
 docker compose run --rm backend-tests
-docker compose run --rm --no-deps backend-tests python -m ruff check mock-service identity-service
+docker compose run --rm --no-deps backend-tests python -m ruff check identity-service
 ```
 
 Las pruebas de navegador usan un proyecto Compose aislado y crean cuentas de prueba en su propia base. Detener `web-local` antes de ejecutar las pruebas, que requieren los puertos 15174, 15443 y 18002 disponibles:

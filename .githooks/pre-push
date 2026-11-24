@@ -20,4 +20,4 @@ if [ ! -f "$compose_file" ]; then
 fi
 
 docker compose --project-directory "$repo_root" -f "$compose_file" run --build --rm --no-deps backend-tests
-docker compose --project-directory "$repo_root" -f "$compose_file" run --build --rm --no-deps mock-app npm test
+docker compose --project-directory "$repo_root" -f "$compose_file" run --build --rm --no-deps web-app npm test

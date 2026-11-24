@@ -7,7 +7,6 @@ tiene su propia subcarpeta, código, dependencias y tests.
 
 | Servicio | Carpeta | Compose |
 |---|---|---|
-| Mock service | [`mock-service/`](mock-service/) | `mock-service` |
 | Identity service | [`identity-service/`](identity-service/) | `identity-service` |
 | Events service | [`events-service/`](events-service/) | `events-service` |
 | Compras service | [`compras-service/`](compras-service/) | `compras-service` |
@@ -20,7 +19,6 @@ comandos son los mismos en Windows, macOS y Linux.
 Desde la raíz del repositorio:
 
 ```bash
-docker compose run --rm mock-service pytest
 docker compose run --rm backend-tests sh -c "cd events-service && pytest"
 ```
 
@@ -47,7 +45,6 @@ carpeta y declarar sus dependencias en `requirements.txt` (o `requirements-dev.t
 los incluya automáticamente.
 
 Consultá las instrucciones específicas en
-[`mock-service/README.md`](mock-service/README.md),
 [`events-service/README.md`](events-service/README.md),
 [`compras-service/README.md`](compras-service/README.md),
 [`identity-service/README.md`](identity-service/README.md).
