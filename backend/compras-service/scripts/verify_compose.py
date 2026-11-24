@@ -70,6 +70,8 @@ def idempotencia_y_propiedad(ctx: E2EContext):
     )
     assert compra["cliente_id"] == ctx.state["customer_id"]
     assert compra["estado"] == "confirmada"
+    assert "reserva_id" in compra
+    assert compra["asiento_id"] is None
 
     repetida = ctx.request(
         "purchases", "POST", "/compras", body, token=token, headers=clave, expected=200

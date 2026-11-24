@@ -144,7 +144,7 @@ class E2EContext:
 
     @staticmethod
     def build_event_payload(cupo: int = 100) -> dict:
-        """Payload válido de evento con una modalidad general."""
+        """Payload válido de evento con una modalidad general y una numerada."""
         return {
             "nombre": "Integration event",
             "venue": "Test venue",
@@ -155,7 +155,21 @@ class E2EContext:
                     "tipo": "general",
                     "precio": "1500.00",
                     "cupo": cupo,
-                }
+                },
+                {
+                    "nombre": "Platea Numerada",
+                    "tipo": "numerado",
+                    "sectores": [
+                        {
+                            "nombre": "Sector A",
+                            "precio": "3000.00",
+                            "asientos": [
+                                {"fila": "1", "numero": 1},
+                                {"fila": "1", "numero": 2},
+                            ],
+                        }
+                    ],
+                },
             ],
         }
 

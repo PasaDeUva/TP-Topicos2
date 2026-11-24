@@ -5,12 +5,14 @@ Servicios involucrados: identity-service, events-service y compras-service.
 Qué valida (solo lo que requiere a los tres servicios a la vez):
 1. Compra de un cliente autenticado: compras-service valida la sesión con
    identity-service, consulta el evento en events-service y responde 201 con
-   estado 'confirmada' y el cliente_id del token.
-2. Orquestación de inventario: la compra reserva y confirma en events-service,
+   estado 'confirmada', reserva_id y el cliente_id del token.
+2. Compra en modalidad numerada: reserva y compra con asiento_id asignado, y
+   conflicto 409 al reintentar el mismo asiento.
+3. Orquestación de inventario: la compra reserva y confirma en events-service,
    por lo que la disponibilidad de la modalidad baja exactamente en 1.
-3. Idempotencia extremo a extremo: el replay con la misma Idempotency-Key devuelve
+4. Idempotencia extremo a extremo: el replay con la misma Idempotency-Key devuelve
    200 con la misma compra y NO consume otra unidad de inventario en events-service.
-4. Trazabilidad: el X-Correlation-Id viaja entre servicios y queda en las
+5. Trazabilidad: el X-Correlation-Id viaja entre servicios y queda en las
    bitácoras JSON de events-service y compras-service (método, ruta, status,
    duración).
 """
@@ -49,6 +51,8 @@ def run(ctx: E2EContext):
     )
     assert purchase["cliente_id"] == customer_id
     assert purchase["estado"] == "confirmada"
+    assert "reserva_id" in purchase
+    assert purchase["asiento_id"] is None
     assert disponibles() == inicial - 1
 
     repeated = ctx.request(
@@ -62,6 +66,52 @@ def run(ctx: E2EContext):
     )
     assert repeated["id"] == purchase["id"]
     assert disponibles() == inicial - 1
+
+    modalidad_num = next(
+        (m for m in event["modalidades"] if m["tipo"] == "numerado"), None
+    )
+    if modalidad_num and modalidad_num.get("sectores"):
+        asiento_target = modalidad_num["sectores"][0]["asientos"][0]["id"]
+        key_num = {"Idempotency-Key": f"integration-num-key-{uuid.uuid4().hex[:8]}"}
+        purchase_num = ctx.request(
+            "purchases",
+            "POST",
+            "/compras",
+            {
+                "evento_id": event["id"],
+                "modalidad_id": modalidad_num["id"],
+                "asiento_id": asiento_target,
+            },
+            token=customer_tokens["access_token"],
+            headers=key_num,
+            expected=201,
+        )
+        assert purchase_num["asiento_id"] == asiento_target
+        assert purchase_num["estado"] == "confirmada"
+
+        key_num_dup = {"Idempotency-Key": f"integration-num-key-2-{uuid.uuid4().hex[:8]}"}
+        ctx.request(
+            "purchases",
+            "POST",
+            "/compras",
+            {
+                "evento_id": event["id"],
+                "modalidad_id": modalidad_num["id"],
+                "asiento_id": asiento_target,
+            },
+            token=customer_tokens["access_token"],
+            headers=key_num_dup,
+            expected=409,
+        )
+        ctx.state["purchase_num"] = purchase_num
+
+    compras = ctx.request(
+        "purchases", "GET", "/compras", token=customer_tokens["access_token"]
+    )
+    compras_ids = [c["id"] for c in compras]
+    assert purchase["id"] in compras_ids
+    if "purchase_num" in ctx.state:
+        assert ctx.state["purchase_num"]["id"] in compras_ids
 
     for service, correlation, method, path, status in (
         ("events-service", event_correlation, "POST", "/eventos", 201),
