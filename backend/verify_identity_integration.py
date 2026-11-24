@@ -186,8 +186,8 @@ def verify(rollback_files=None):
                         "nombre": "Sector A",
                         "precio": "3000.00",
                         "asientos": [
-                            {"fila": 1, "numero": 1},
-                            {"fila": 1, "numero": 2},
+                            {"fila": "1", "numero": 1},
+                            {"fila": "1", "numero": 2},
                         ],
                     }
                 ],
@@ -315,12 +315,14 @@ def verify(rollback_files=None):
         headers=key,
         expected=409,
     )
-    assert (
-        request(purchases, "GET", "/compras", token=customer_tokens["access_token"])[0][
-            "id"
-        ]
-        == purchase["id"]
-    )
+    compras_ids = [
+        c["id"]
+        for c in request(
+            purchases, "GET", "/compras", token=customer_tokens["access_token"]
+        )
+    ]
+    assert purchase["id"] in compras_ids
+    assert purchase_num["id"] in compras_ids
     request(
         purchases,
         "GET",
