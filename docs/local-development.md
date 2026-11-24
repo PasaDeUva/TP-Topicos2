@@ -38,18 +38,18 @@ mezclar dependencias de servicios distintos.
 
 ## Servicios backend (Python)
 
-Repetir para cada servicio dentro de `backend/` (`mock-service`, `events-service`,
-`compras-service`, `identity-service`). El ejemplo usa `mock-service`.
-`--prompt .` hace que la terminal muestre el nombre del servicio (`(mock-service)`)
+Repetir para cada servicio dentro de `backend/` (`events-service`,
+`compras-service`, `identity-service`). El ejemplo usa `events-service`.
+`--prompt .` hace que la terminal muestre el nombre del servicio (`(events-service)`)
 en lugar de `(.venv)`, y `--clear` recrea el venv si ya existía.
 
 **Windows (PowerShell):**
 
 ```powershell
-cd backend\mock-service
+cd backend\events-service
 py -3.12 -m venv --clear --prompt . .venv
 .venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 ```
 
 Si PowerShell bloquea `Activate.ps1`, habilitar scripts para el usuario una sola vez:
@@ -58,10 +58,10 @@ Si PowerShell bloquea `Activate.ps1`, habilitar scripts para el usuario una sola
 **macOS y Linux:**
 
 ```bash
-cd backend/mock-service
+cd backend/events-service
 python3.12 -m venv --clear --prompt . .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 ```
 
 Comprobar que se creó con Python 3.12 y que las librerías cargan:
@@ -72,16 +72,16 @@ python -c "import sys, fastapi; print(sys.version.split()[0], fastapi.__version_
 
 Para salir del venv: `deactivate`.
 
-Si cambia `requirements.txt`, volver a ejecutar `python -m pip install -r requirements.txt` con el venv activo.
+Si cambia `requirements.txt` o `requirements-dev.txt`, volver a ejecutar `python -m pip install -r requirements-dev.txt` con el venv activo.
 
 ## Aplicaciones frontend (Node)
 
-Repetir para cada aplicación dentro de `frontend/`. El ejemplo usa `mock-app`.
+Repetir para cada aplicación dentro de `frontend/`. El ejemplo usa `web-app`.
 
 Con Node activo en la terminal:
 
 ```bash
-cd frontend/mock-app
+cd frontend/web-app
 npm install
 ```
 
@@ -94,8 +94,8 @@ servicio o aplicación se abre como su propia carpeta, no desde la raíz del
 repositorio:
 
 ```bash
-code backend/mock-service
-code frontend/mock-app
+code backend/events-service
+code frontend/web-app
 ```
 
 Abrir la raíz del repositorio deja los imports de los servicios sin resolver,
@@ -103,7 +103,7 @@ porque los entornos están dentro de cada carpeta.
 
 ### VS Code: seleccionar el intérprete
 
-Al abrir `backend/mock-service`, VS Code suele detectar `.venv` por sí solo. Si
+Al abrir `backend/events-service`, VS Code suele detectar `.venv` por sí solo. Si
 no lo hace:
 
 1. Abrir la paleta de comandos (`Ctrl+Shift+P`, o `Cmd+Shift+P` en macOS).
@@ -147,9 +147,9 @@ No hace falta mantener el venv activado todo el tiempo.
 
 ## Verificar que funciona
 
-- En `backend/mock-service/app/main.py`, `from fastapi import FastAPI` no debe
+- En `backend/events-service/app/main.py`, `from fastapi import FastAPI` no debe
   mostrar un error de import sin resolver.
-- En `frontend/mock-app/src/App.tsx`, los imports de `react` no deben mostrar
+- En `frontend/web-app/src/App.tsx`, los imports de `react` no deben mostrar
   errores, y `vite.config.ts` debe reconocer `vite`.
 - `git status` no debe listar `.venv/` ni `node_modules/`.
 

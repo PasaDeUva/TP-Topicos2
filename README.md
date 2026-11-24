@@ -25,11 +25,9 @@ TP-Topicos2/
 ├── backend/
 │   ├── identity-service/   # Cuentas, roles, autenticación JWT/cookies y revocación de sesiones
 │   ├── events-service/     # Catálogo de eventos, modalidades (general y numerada), inventario y reservas
-│   ├── compras-service/    # Registro y consulta de compras con idempotencia e integración con Identity y Events
-│   └── mock-service/       # Servicio FastAPI de ejemplo / scaffold inicial
+│   └── compras-service/    # Registro y consulta de compras con idempotencia e integración con Identity y Events
 ├── frontend/
-│   ├── web-app/            # Aplicación web principal (autenticación, registro, panel de administración de organizadores)
-│   └── mock-app/           # Aplicación React de ejemplo conectada a mock-service
+│   └── web-app/            # Aplicación web principal (autenticación, registro, panel de administración de organizadores)
 ├── docs/                   # Documentación técnica, consigna, glosario y ADRs (Architecture Decision Records)
 └── openspec/               # Especificaciones OpenSpec (specs vigentes, cambios y archivo)
 ```
@@ -41,9 +39,7 @@ TP-Topicos2/
 | `identity-service` | `8002` | Autenticación, registro, gestión de roles y sesiones web | `identity_db` (puerto `5435`) |
 | `events-service` | `8001` | Gestión de catálogo de eventos, modalidades, sectores, asientos y reservas | `events_db` (puerto `5433`) |
 | `compras-service` | `8003` | Registro y consulta de compras de entradas con validación e idempotencia | `compras_db` (puerto `5436`) |
-| `mock-service` | `8000` | Microservicio mock de ejemplo | `topicos` (puerto `5432`) |
 | `web-app` | `5174` | Aplicación web (React + Vite) con proxy integrado para `/auth` y `/admin` | N/A |
-| `mock-app` | `5173` | Frontend de ejemplo conectado a `mock-service` | N/A |
 
 > **Nota:** Todos los puertos del host son parametrizables a través de variables de entorno (ver `.env.example`).
 
@@ -88,8 +84,6 @@ docker compose up -d --build
 - **Identity API (Swagger UI):** <http://localhost:8002/docs>
 - **Events API (Swagger UI):** <http://localhost:8001/docs>
 - **Compras API (Swagger UI):** <http://localhost:8003/docs>
-- **Mock App:** <http://localhost:5173>
-- **Mock Service:** <http://localhost:8000/health>
 
 ### Iniciar servicios individuales
 

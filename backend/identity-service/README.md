@@ -40,7 +40,7 @@ Para habilitar estas rutas, configurar un único origen de frontend en `IDENTITY
 ```sh
 docker compose build backend-tests
 docker compose run --rm backend-tests
-docker compose run --rm --no-deps backend-tests python -m ruff check mock-service identity-service
+docker compose run --rm --no-deps backend-tests python -m ruff check identity-service
 ```
 
 El runner inicia las bases de pruebas y crea `identity_test` si falta, incluso en un volumen existente. La suite de Identity aplica sus migraciones antes de ejecutarse. `IDENTITY_TEST_DATABASE_URL` debe apuntar a una base PostgreSQL llamada `identity_test`, independiente de `identity_db` y de la base de Events. `identity_db` e `identity_test` comparten la instancia local de Identity.

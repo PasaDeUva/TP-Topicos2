@@ -136,15 +136,11 @@ docker compose run --rm backend-tests sh -c "cd compras-service && pytest -v"
 
 ```bash
 # Backend (Ruff)
-docker compose run --rm --no-deps backend-tests python -m ruff check identity-service events-service compras-service mock-service
+docker compose run --rm --no-deps backend-tests python -m ruff check identity-service events-service compras-service
 
 # Frontend web-app (ESLint y TypeScript)
 docker compose run --rm web-app npm run lint
 docker compose run --rm web-app npm run typecheck
-
-# Frontend mock-app
-docker compose run --rm mock-app npm run lint
-docker compose run --rm mock-app npm run typecheck
 ```
 
 ### C. Verificaciones de Caja Negra en Compose Aislado
@@ -175,9 +171,9 @@ El pipeline valida secuencialmente:
 3. **Compose Config:** Comprueba la sintaxis y variables de `compose.yaml`.
 4. **Construcción de Imágenes:** Compila las imágenes de Docker de todos los servicios.
 5. **Migraciones:** Aplica y comprueba drift en las bases de datos de test (`alembic upgrade head && alembic check`).
-6. **Tests de Backend:** Ejecuta `pytest` sobre `identity-service`, `events-service`, `compras-service` y `mock-service`.
+6. **Tests de Backend:** Ejecuta `pytest` sobre `identity-service`, `events-service` y `compras-service`.
 7. **Linter de Backend:** Ejecuta `ruff check`.
-8. **Frontend Checks:** Ejecuta `npm test`, `npm run lint` y `npm run typecheck` en `mock-app` y `web-app`.
+8. **Frontend Checks:** Ejecuta `npm test`, `npm run lint` y `npm run typecheck` en `web-app`.
 9. **E2E Integration Test:** Ejecuta la prueba de integración end-to-end con Identity real y microservicios.
 
 > ⚠️ Si cualquiera de estos pasos falla, el Pull Request quedará bloqueado y no podrá integrarse hasta corregir las observaciones.
