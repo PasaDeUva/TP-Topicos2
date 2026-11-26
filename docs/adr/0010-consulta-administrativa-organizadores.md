@@ -1,6 +1,6 @@
 # ADR-0010: Consulta administrativa de organizadores
 
-- Estado: Propuesto
+- Estado: Aceptado
 - Fecha: 2026-11-20
 
 ## Contexto

@@ -1,6 +1,6 @@
 # ADR-0013: Identidad autenticada en Eventos y Compras
 
-- Estado: Propuesto
+- Estado: Aceptado
 - Fecha: 2026-11-22
 
 ## Contexto
