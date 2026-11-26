@@ -1,6 +1,6 @@
 # ADR-0014: Suite E2E y de integración multiservicio en backend
 
-- Estado: Propuesto
+- Estado: Aceptado
 - Fecha: 2026-11-23
 
 ## Contexto
